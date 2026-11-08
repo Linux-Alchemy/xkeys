@@ -1,5 +1,7 @@
 #include "controller.h"
 
+#include "ipc/endpoint.h"
+
 #include <QCommandLineParser>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
@@ -35,7 +37,10 @@ int main(int argc, char **argv)
     const QCommandLineOption socket(QStringLiteral("socket"),
                                     QStringLiteral("Use a private absolute socket path."),
                                     QStringLiteral("path"));
-    parser.addOptions({demo, socket});
+    const QCommandLineOption profilesDir(QStringLiteral("profiles-dir"),
+                                         QStringLiteral("Use an absolute demo profiles directory."),
+                                         QStringLiteral("path"));
+    parser.addOptions({demo, socket, profilesDir});
     parser.process(*app);
 
     if (!launch || !parser.isSet(demo) || !parser.positionalArguments().isEmpty()) {
@@ -45,6 +50,15 @@ int main(int argc, char **argv)
     if (parser.isSet(socket) && parser.value(socket).isEmpty()) {
         diagnostic << "--socket requires a private absolute path." << Qt::endl;
         return 2;
+    }
+
+    if (parser.isSet(profilesDir)) {
+        QString error;
+        if (parser.value(profilesDir).isEmpty() ||
+            xkeys::ipc::demoProfilesDir(parser.value(profilesDir), {}, error).isEmpty()) {
+            diagnostic << "--profiles-dir requires an absolute path." << Qt::endl;
+            return 2;
+        }
     }
 
     QGuiApplication::setDesktopFileName(QStringLiteral("xkeys-demo"));
@@ -57,6 +71,6 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    controller.startDemo(parser.value(socket));
+    controller.startDemo(parser.value(socket), parser.value(profilesDir));
     return QCoreApplication::exec();
 }

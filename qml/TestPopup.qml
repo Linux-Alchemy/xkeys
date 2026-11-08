@@ -10,6 +10,7 @@ Rectangle {
     required property int activeLayer
     required property bool blank
     required property bool connected
+    property bool editing: false
 
     objectName: "testPopup"
     color: "#1c2630"
@@ -24,7 +25,7 @@ Rectangle {
         spacing: 12
 
         Text {
-            text: qsTr("TEST RESULT")
+            text: root.editing ? qsTr("SAVED BINDING") : qsTr("TEST RESULT")
             color: "#aab6c3"
             font.pixelSize: 12
             font.letterSpacing: 1.2
