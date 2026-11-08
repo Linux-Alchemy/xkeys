@@ -27,7 +27,7 @@ Rectangle {
 
     function keyboardDisplay(): string {
         const index = keyboardIndex();
-        return index >= 0 ? controller.recordingKeyboards[index].name : qsTr("Choose recording keyboard");
+        return index >= 0 ? controller.recordingKeyboards[index].name : qsTr("Choose recording device");
     }
 
     ColumnLayout {
@@ -65,7 +65,7 @@ Rectangle {
                 spacing: 12
                 Text {
                     textFormat: Text.PlainText
-                    text: qsTr("Recording keyboard")
+                    text: qsTr("Recording device")
                     color: "#c5cdd6"
                     font.pixelSize: 13
                 }
@@ -105,9 +105,17 @@ Rectangle {
                     enabled: root.controller.recordingAvailable && !root.controller.recordingBusy && root.controller.recordingState !== "Draft" && root.controller.recordingState !== "Saving"
                     onActivated: root.controller.setRecordingKeyboard(currentValue)
                 }
+                Text {
+                    textFormat: Text.PlainText
+                    Layout.fillWidth: true
+                    text: qsTr("Keyboard shortcuts only for now. Native mouse clicks and scrolling are not supported yet.")
+                    color: "#aab6c3"
+                    font.pixelSize: 12
+                    wrapMode: Text.Wrap
+                }
                 Button {
                     objectName: "refreshKeyboardsButton"
-                    text: qsTr("Refresh keyboards")
+                    text: qsTr("Refresh devices")
                     enabled: root.controller.recordingAvailable && !root.controller.recordingBusy && root.controller.recordingState !== "Draft" && root.controller.recordingState !== "Saving"
                     onClicked: root.controller.refreshRecordingKeyboards()
                 }

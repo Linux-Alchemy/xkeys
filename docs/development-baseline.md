@@ -131,3 +131,8 @@ For a known conflict or incomplete coverage, choose **Use binding anyway** or
 activating it or sending keys.
 The default `--demo` launch keeps recording disabled. Automated tests use fake
 keyboards, helper streams, and compositor metadata.
+
+The **Recording device** list can include composite devices such as a gaming mouse
+that exposes keyboard interfaces. Those entries remain available for keyboard
+shortcut events. Native mouse buttons and wheel actions are not supported by the
+current recorder, profile format or output implementation.

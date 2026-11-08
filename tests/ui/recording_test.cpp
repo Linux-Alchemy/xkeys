@@ -637,7 +637,7 @@ void RecordingUiTest::rejectedKeyboardClearsPreviousSelection()
     QVERIFY(controller_->recordingMessage().contains(QStringLiteral("Synthetic access denied")));
     QTRY_VERIFY(controller_->recordingKeyboardId().isEmpty());
     QTRY_COMPARE(selector->property("displayText").toString(),
-                 QStringLiteral("Choose recording keyboard"));
+                 QStringLiteral("Choose recording device"));
 
     click(QStringLiteral("pad-key03"));
     QTRY_COMPARE(controller_->selectedControl(), key03);
