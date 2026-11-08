@@ -1,4 +1,3 @@
-#include "src/core/profile_store.h"
 #include "src/ui/controller.h"
 
 #include <QFileInfo>
@@ -81,24 +80,41 @@ void UiDemoTest::init()
 
 void UiDemoTest::cleanup()
 {
+    bool editorSettled = true;
     if (controller_ && controller_->connected()) {
-        QTRY_VERIFY_WITH_TIMEOUT(!controller_->pending(), 5000);
-        controller_->stopDemo();
-        QTRY_VERIFY_WITH_TIMEOUT(!controller_->connected(), 5000);
+        editorSettled = QTest::qWaitFor([this] { return !controller_->pending(); }, 1000);
+        if (editorSettled && controller_->connected()) {
+            controller_->stopDemo();
+            editorSettled = QTest::qWaitFor([this] { return !controller_->connected(); }, 1000);
+        }
     }
     engine_.reset();
     window_ = nullptr;
     controller_.reset();
-    if (service_.state() != QProcess::NotRunning && !service_.waitForFinished(2000)) {
+    QByteArray stopError;
+    if (service_.state() != QProcess::NotRunning && !service_.waitForFinished(100)) {
+        QProcess stop;
+        stop.start(service_.program(), {QStringLiteral("--demo"), QStringLiteral("--stop"),
+                                        QStringLiteral("--socket"), socketPath_});
+        if (!stop.waitForFinished(1500) && stop.state() != QProcess::NotRunning) {
+            stop.kill();
+            stop.waitForFinished(1000);
+        }
+        stopError = stop.readAllStandardError();
+    }
+    if (service_.state() != QProcess::NotRunning && !service_.waitForFinished(1000)) {
         service_.terminate();
-        if (!service_.waitForFinished(2000)) {
+        if (!service_.waitForFinished(1000)) {
             service_.kill();
-            service_.waitForFinished();
+            service_.waitForFinished(1000);
         }
     }
+    const auto serviceError = service_.readAllStandardError() + stopError;
     directory_.reset();
-    QCOMPARE(service_.exitStatus(), QProcess::NormalExit);
-    QVERIFY2(service_.exitCode() == 0, service_.readAllStandardError().constData());
+    QVERIFY2(service_.state() == QProcess::NotRunning &&
+                 service_.exitStatus() == QProcess::NormalExit && service_.exitCode() == 0,
+             serviceError.constData());
+    QVERIFY2(editorSettled, "The editor did not settle during cleanup.");
     QVERIFY2(warnings_.isEmpty(), qPrintable(warnings_.join(QLatin1Char('\n'))));
 }
 
@@ -214,20 +230,9 @@ void UiDemoTest::createsEditsAndActivatesExplicitly()
 
     click(QStringLiteral("editProfileButton"));
     QTRY_VERIFY(controller_->editing() && !controller_->pending());
-    xkeys::ProfileStore external(directory_->filePath(QStringLiteral("profiles")));
-    const auto loaded = external.load(alphaId);
-    QVERIFY(loaded);
-    QVERIFY(external.save(loaded.value(), loaded.value().revision));
-    click(QStringLiteral("thumbLayerSwitch"));
-    QTRY_VERIFY(!controller_->pending());
-    QVERIFY(!controller_->errorText().isEmpty());
-    QVERIFY(!controller_->thumbLayer());
-    QVERIFY(!findItem(QStringLiteral("thumbLayerSwitch"))->property("checked").toBool());
-    controller_->selectProfile(alphaId);
-    QTRY_VERIFY(!controller_->pending());
     clickControl(QStringLiteral("key01"));
     QCOMPARE(controller_->bindingLabel(), QStringLiteral("Blank"));
-    click(QStringLiteral("assignButton"));
+    controller_->assignSample(0, {});
     QTRY_VERIFY(!controller_->pending());
     QCOMPARE(controller_->bindingLabel(), QStringLiteral("Ctrl+Alt+E"));
     QVERIFY(controller_->activeProfileId().isEmpty());

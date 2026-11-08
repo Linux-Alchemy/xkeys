@@ -40,7 +40,10 @@ int main(int argc, char **argv)
     const QCommandLineOption profilesDir(QStringLiteral("profiles-dir"),
                                          QStringLiteral("Use an absolute demo profiles directory."),
                                          QStringLiteral("path"));
-    parser.addOptions({demo, socket, profilesDir});
+    const QCommandLineOption recording(
+        QStringLiteral("recording"),
+        QStringLiteral("Enable explicit keyboard recording in a Hyprland Wayland session."));
+    parser.addOptions({demo, socket, profilesDir, recording});
     parser.process(*app);
 
     if (!launch || !parser.isSet(demo) || !parser.positionalArguments().isEmpty()) {
@@ -63,7 +66,8 @@ int main(int argc, char **argv)
 
     QGuiApplication::setDesktopFileName(QStringLiteral("xkeys-demo"));
 
-    xkeys::Controller controller;
+    xkeys::Controller controller(xkeys::makeCaptureBackend(parser.isSet(recording)),
+                                 xkeys::makeShortcutContext());
     QQmlApplicationEngine engine;
     engine.setInitialProperties({{QStringLiteral("controller"), QVariant::fromValue(&controller)}});
     engine.loadFromModule(QStringLiteral("XKeys"), QStringLiteral("Main"));
