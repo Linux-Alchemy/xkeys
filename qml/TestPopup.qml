@@ -25,12 +25,14 @@ Rectangle {
         spacing: 12
 
         Text {
+            textFormat: Text.PlainText
             text: root.editing ? qsTr("SAVED BINDING") : qsTr("TEST RESULT")
             color: "#aab6c3"
             font.pixelSize: 12
             font.letterSpacing: 1.2
         }
         Text {
+            textFormat: Text.PlainText
             Layout.fillWidth: true
             text: !root.connected ? qsTr("Disconnected") : (root.controlId.length === 0 ? qsTr("Select a control") : root.controlName)
             color: "#e5e9f0"
@@ -38,6 +40,7 @@ Rectangle {
             wrapMode: Text.Wrap
         }
         Text {
+            textFormat: Text.PlainText
             objectName: "resolvedBinding"
             Layout.fillWidth: true
             text: root.connected && root.controlId.length > 0 ? root.bindingLabel : "—"
@@ -47,6 +50,7 @@ Rectangle {
             wrapMode: Text.Wrap
         }
         Text {
+            textFormat: Text.PlainText
             Layout.fillWidth: true
             text: root.connected && root.controlId.length > 0 ? qsTr("Layer %1 · %2").arg(root.activeLayer).arg(root.blank ? qsTr("Unassigned") : qsTr("Assigned")) : qsTr("Click a key or thumb control to see its demo binding.")
             color: "#aab6c3"

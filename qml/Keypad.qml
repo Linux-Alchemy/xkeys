@@ -11,6 +11,7 @@ Item {
     required property string selectedControl
     required property bool ready
     required property var heldControls
+    required property var controlLabels
 
     signal controlPressed(string controlId)
 
@@ -22,24 +23,45 @@ Item {
 
         required property string controlId
         property string accessibleLabel: text
+        readonly property string savedShortcut: root.controlLabels[controlId] || ""
+        readonly property bool compact: controlId.startsWith("wheel")
+        topPadding: 3
+        bottomPadding: 3
 
         objectName: "pad-" + controlId
+        implicitWidth: 60
         enabled: root.ready
         Layout.fillWidth: true
         Layout.fillHeight: true
         focusPolicy: Qt.StrongFocus
-        Accessible.name: accessibleLabel
+        Accessible.name: accessibleLabel + (savedShortcut.length > 0 ? ": " + savedShortcut : "")
         ToolTip.visible: hovered
-        ToolTip.text: accessibleLabel
+        ToolTip.text: accessibleLabel + (savedShortcut.length > 0 ? ": " + savedShortcut : "")
         ToolTip.delay: 500
 
-        contentItem: Text {
-            text: padButton.text
-            color: padButton.enabled ? "#e5e9f0" : "#77808c"
-            font.pixelSize: 15
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-            elide: Text.ElideRight
+        contentItem: Column {
+            spacing: 3
+            Text {
+                textFormat: Text.PlainText
+                width: parent.width
+                text: padButton.compact && padButton.savedShortcut.length > 0 ? padButton.text + ": " + padButton.savedShortcut : padButton.text
+                color: padButton.enabled ? "#e5e9f0" : "#77808c"
+                font.pixelSize: padButton.compact ? 10 : (padButton.savedShortcut.length > 0 ? 12 : 15)
+                horizontalAlignment: Text.AlignHCenter
+                elide: Text.ElideRight
+            }
+            Text {
+                textFormat: Text.PlainText
+                width: parent.width
+                visible: !padButton.compact && padButton.savedShortcut.length > 0
+                text: padButton.savedShortcut
+                color: padButton.savedShortcut === "Blank" ? "#77808c" : "#8dd4e8"
+                font.pixelSize: 12
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WrapAnywhere
+                maximumLineCount: 2
+                elide: Text.ElideRight
+            }
         }
         background: Rectangle {
             color: root.heldControls.indexOf(padButton.controlId) >= 0 ? "#496479" : (padButton.down ? "#384755" : (padButton.hovered ? "#303b47" : "#242d37"))
@@ -60,6 +82,7 @@ Item {
             spacing: 12
 
             Text {
+                textFormat: Text.PlainText
                 text: qsTr("KEYPAD")
                 color: "#aab6c3"
                 font.pixelSize: 12
@@ -116,6 +139,7 @@ Item {
             spacing: 12
 
             Text {
+                textFormat: Text.PlainText
                 text: qsTr("THUMB CONTROLS")
                 color: "#aab6c3"
                 font.pixelSize: 12
@@ -130,6 +154,8 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 columns: 3
+                uniformCellWidths: true
+                uniformCellHeights: true
                 rowSpacing: 5
                 columnSpacing: 5
 
@@ -150,6 +176,7 @@ Item {
                     text: "←"
                 }
                 Text {
+                    textFormat: Text.PlainText
                     text: qsTr("D-pad")
                     color: "#aab6c3"
                     font.pixelSize: 10

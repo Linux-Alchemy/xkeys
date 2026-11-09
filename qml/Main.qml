@@ -6,6 +6,10 @@ import XKeys
 ApplicationWindow {
     id: root
     required property Controller controller
+    readonly property bool bindingTransaction: controller.recordingBusy || controller.recordingState === "Draft" || controller.recordingState === "Saving"
+    onActiveChanged: controller.setWindowActive(active && visible)
+    onVisibleChanged: controller.setWindowActive(active && visible)
+    onClosing: controller.cancelDraft()
     objectName: "mainWindow"
     visible: true
     title: qsTr("Xkeys Demo")
@@ -19,7 +23,7 @@ ApplicationWindow {
         for (let index = 0; index < controller.controls.length; ++index) {
             const control = controller.controls[index];
             if (control.controlId === id)
-                return id.startsWith("key") ? qsTr("Key %1").arg(control.label) : control.label;
+                return id.startsWith("key") ? qsTr("Button %1").arg(control.label) : control.label;
         }
         return "";
     }
@@ -32,6 +36,7 @@ ApplicationWindow {
     }
 
     component AppText: Text {
+        textFormat: Text.PlainText
         color: "#c5cdd6"
         font.pixelSize: 13
         wrapMode: Text.Wrap
@@ -56,7 +61,7 @@ ApplicationWindow {
                 color: "#f0f3f6"
             }
             AppText {
-                text: qsTr("DEMO / SIMULATED CONTROLS")
+                text: root.controller.recordingAvailable ? qsTr("RECORDING EDITOR / PAD OUTPUT SIMULATED") : qsTr("DEMO / SIMULATED CONTROLS")
                 color: "#8dd4e8"
                 font.pixelSize: 12
                 font.letterSpacing: 1
@@ -72,7 +77,7 @@ ApplicationWindow {
             }
             AppText {
                 objectName: "connectionStatus"
-                text: root.controller.statusText
+                text: root.controller.connected ? qsTr("Connected") : root.controller.statusText
             }
         }
 
@@ -88,24 +93,24 @@ ApplicationWindow {
                 valueRole: "id"
                 currentIndex: root.profileIndex()
                 displayText: currentIndex < 0 ? qsTr("Choose a profile") : currentText
-                enabled: root.controller.connected && !root.controller.pending
+                enabled: root.controller.connected && !root.controller.pending && !root.bindingTransaction
                 onActivated: root.controller.selectProfile(currentValue)
             }
             ActionButton {
                 objectName: "newProfileButton"
                 text: qsTr("New profile")
-                enabled: root.controller.connected && !root.controller.pending
+                enabled: root.controller.connected && !root.controller.pending && !root.bindingTransaction
                 onClicked: newProfileDialog.open()
             }
             ActionButton {
                 text: qsTr("Rename")
-                enabled: root.controller.hasProfile && root.controller.connected && !root.controller.pending
+                enabled: root.controller.hasProfile && root.controller.connected && !root.controller.pending && !root.bindingTransaction
                 onClicked: renameDialog.open()
             }
             ActionButton {
                 objectName: "deleteProfileButton"
                 text: qsTr("Delete")
-                enabled: root.controller.hasProfile && root.controller.connected && !root.controller.pending
+                enabled: root.controller.hasProfile && root.controller.connected && !root.controller.pending && !root.bindingTransaction
                 onClicked: deleteDialog.open()
             }
         }
@@ -116,19 +121,19 @@ ApplicationWindow {
             ActionButton {
                 objectName: "activateButton"
                 text: qsTr("Activate")
-                enabled: root.controller.hasProfile && root.controller.connected && !root.controller.pending
+                enabled: root.controller.hasProfile && root.controller.connected && !root.controller.pending && !root.bindingTransaction
                 onClicked: root.controller.activateSelected()
             }
             ActionButton {
                 objectName: "editProfileButton"
                 text: qsTr("Edit")
-                enabled: root.controller.hasProfile && root.controller.connected && !root.controller.pending && !root.controller.editing
+                enabled: root.controller.hasProfile && root.controller.connected && !root.controller.pending && !root.bindingTransaction && !root.controller.editing
                 onClicked: root.controller.editSelected()
             }
             ActionButton {
                 objectName: "deactivateButton"
                 text: qsTr("Deactivate")
-                enabled: root.controller.mode !== "Inactive" && root.controller.connected && !root.controller.pending
+                enabled: root.controller.mode !== "Inactive" && root.controller.connected && !root.controller.pending && !root.bindingTransaction
                 onClicked: root.controller.deactivate()
             }
             AppText {
@@ -137,70 +142,6 @@ ApplicationWindow {
                 text: !root.controller.connected ? qsTr("Disconnected") : (root.controller.activeProfileId.length > 0 ? qsTr("Active demo: %1 · Layer %2").arg(root.controller.activeProfileName).arg(root.controller.activeLayer) : (root.controller.editing ? qsTr("Editing %1 · output off").arg(root.controller.selectedProfileName) : qsTr("No active demo profile")))
                 color: root.controller.activeProfileId.length > 0 ? "#9ad5b5" : "#aab6c3"
                 horizontalAlignment: Text.AlignRight
-            }
-        }
-
-        RowLayout {
-            Layout.fillWidth: true
-            visible: root.controller.connected && root.controller.editing
-            spacing: 10
-            AppText {
-                text: qsTr("Editing layer")
-            }
-            ComboBox {
-                objectName: "editLayerSelector"
-                model: [qsTr("Layer 1"), qsTr("Layer 2")]
-                currentIndex: root.controller.editLayer - 1
-                enabled: !root.controller.pending
-                onActivated: root.controller.setEditLayer(currentIndex + 1)
-            }
-            CheckBox {
-                id: thumbLayerCheck
-                objectName: "thumbLayerSwitch"
-                nextCheckState: function () {
-                    return thumbLayerCheck.checkState;
-                }
-                text: qsTr("Thumb button holds layer 2")
-                checked: root.controller.thumbLayer
-                enabled: !root.controller.pending
-                onClicked: root.controller.setThumbLayer(!root.controller.thumbLayer)
-                palette.windowText: "#c5cdd6"
-            }
-            Item {
-                Layout.fillWidth: true
-            }
-        }
-
-        RowLayout {
-            Layout.fillWidth: true
-            visible: root.controller.connected && root.controller.editing
-            spacing: 8
-            ComboBox {
-                id: sampleSelector
-                objectName: "sampleSelector"
-                model: root.controller.sampleShortcuts
-                enabled: !root.controller.pending
-                Layout.preferredWidth: 150
-            }
-            TextField {
-                id: actionLabel
-                objectName: "actionLabel"
-                Layout.fillWidth: true
-                placeholderText: qsTr("Optional action label")
-                text: root.controller.bindingActionLabel
-                enabled: !root.controller.pending
-            }
-            ActionButton {
-                objectName: "assignButton"
-                text: qsTr("Assign sample")
-                enabled: root.controller.selectedControl.length > 0 && !root.controller.pending && !(root.controller.thumbLayer && root.controller.selectedControl === "thumb")
-                onClicked: root.controller.assignSample(sampleSelector.currentIndex, actionLabel.text)
-            }
-            ActionButton {
-                objectName: "clearBindingButton"
-                text: qsTr("Clear binding")
-                enabled: root.controller.selectedControl.length > 0 && !root.controller.pending
-                onClicked: root.controller.clearBinding()
             }
         }
 
@@ -233,7 +174,7 @@ ApplicationWindow {
 
         AppText {
             Layout.fillWidth: true
-            text: !root.controller.connected ? qsTr("Start demo to reconnect.") : root.controller.editing ? (root.controller.thumbLayer && root.controller.selectedControl === "thumb" ? qsTr("This thumb button switches layers. Disable its layer role to assign a shortcut.") : qsTr("Choose a control, then assign a sample shortcut or clear its binding. Changes save without activation.")) : (root.controller.mode === "Active" ? qsTr("Filled controls are held. The result and transitions come from the running demo.") : qsTr("Create or choose a profile, then explicitly Activate or Edit. New profiles have two blank layers."))
+            text: !root.controller.connected ? qsTr("Start demo to reconnect.") : root.controller.editing ? qsTr("Layer 1: select a button and recording device, click Start recording, then press the shortcut when ready. Save or Cancel explicitly.") : (root.controller.mode === "Active" ? qsTr("Filled controls are held. The result and transitions come from the running demo.") : qsTr("Create or choose a profile, then explicitly Activate or Edit. New profiles have two blank layers."))
             color: "#aab6c3"
         }
 
@@ -250,7 +191,8 @@ ApplicationWindow {
                 controls: root.controller.controls
                 selectedControl: root.controller.connected ? root.controller.selectedControl : ""
                 heldControls: root.controller.heldControls
-                ready: root.controller.connected && !root.controller.pending && (root.controller.editing || root.controller.mode === "Active")
+                controlLabels: root.controller.controlLabels
+                ready: root.controller.connected && !root.controller.pending && !root.bindingTransaction && (root.controller.editing || root.controller.mode === "Active")
                 onControlPressed: controlId => {
                     if (root.controller.editing)
                         root.controller.selectControl(controlId);
@@ -259,10 +201,20 @@ ApplicationWindow {
                 }
             }
             ColumnLayout {
-                Layout.preferredWidth: 235
+                Layout.preferredWidth: root.controller.editing ? 370 : 235
+                Layout.fillHeight: root.controller.editing
                 Layout.alignment: Qt.AlignVCenter
                 spacing: 10
+                BindingEditor {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.maximumHeight: 650
+                    visible: root.controller.editing
+                    controller: root.controller
+                    targetName: root.controlName(root.controller.selectedControl)
+                }
                 TestPopup {
+                    visible: !root.controller.editing
                     Layout.fillWidth: true
                     controlId: root.controller.selectedControl
                     controlName: root.controlName(root.controller.selectedControl)
@@ -274,15 +226,18 @@ ApplicationWindow {
                 }
                 AppText {
                     Layout.fillWidth: true
+                    visible: !root.controller.editing
                     text: qsTr("Held output: %1").arg(root.controller.connected ? root.controller.heldOutputLabel : qsTr("None"))
                     color: "#8dd4e8"
                 }
                 AppText {
+                    visible: !root.controller.editing
                     text: qsTr("SIMULATED TRANSITIONS")
                     font.pixelSize: 11
                     font.letterSpacing: 1
                 }
                 ScrollView {
+                    visible: !root.controller.editing
                     Layout.fillWidth: true
                     Layout.preferredHeight: 95
                     clip: true
@@ -314,7 +269,7 @@ ApplicationWindow {
             spacing: 12
             AppText {
                 Layout.fillWidth: true
-                text: qsTr("Simulation only. Your physical keypad is untouched.")
+                text: root.controller.recordingAvailable ? qsTr("Pad output is simulated. Recording captures only the chosen keyboard.") : qsTr("Simulation only. Your physical keypad is untouched.")
                 color: "#8f9baa"
                 font.pixelSize: 12
             }
@@ -328,7 +283,7 @@ ApplicationWindow {
             ActionButton {
                 objectName: "stopButton"
                 text: qsTr("Stop demo")
-                enabled: root.controller.connected && !root.controller.pending
+                enabled: root.controller.connected && !root.controller.pending && !root.bindingTransaction
                 onClicked: root.controller.stopDemo()
             }
         }
@@ -385,6 +340,7 @@ ApplicationWindow {
         standardButtons: Dialog.Ok | Dialog.Cancel
         onAccepted: root.controller.deleteSelected()
         Label {
+            textFormat: Text.PlainText
             width: 300
             text: qsTr("Delete “%1” and all its saved bindings?").arg(root.controller.selectedProfileName)
             wrapMode: Text.Wrap

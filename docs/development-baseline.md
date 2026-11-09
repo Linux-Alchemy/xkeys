@@ -11,16 +11,20 @@ fetches dependencies.
 | Clang | C++20, matching AddressSanitizer and UndefinedBehaviorSanitizer runtimes | 23.1.3 |
 | clang-format and clang-tidy | LLVM tools for the development checks | 23.1.3 |
 | Qt 6 | 6.12 or later with Core, Gui, Network, Qml, Quick, QuickControls2, Test and QML tools | 6.12.0 |
-| libevdev | Planned for hardware integration | 1.14.0 |
-| libudev | Planned for hardware integration | 262 (pkg-config) |
+| libevdev | Keyboard capture and input capability names | 1.14.0 |
+| libudev | USB keyboard inventory and identity checks | 262 |
+| xkbcommon | Hyprland keyboard layout and modifier interpretation | 1.13.2 |
+| pkg-config | Resolve installed Linux libraries | 3.0.10 |
 
 Both presets use Clang. The installed GCC 16.2.1 can compile the smoke test.
 Using Clang for the presets gives clang-tidy a compilation database it can read
 directly. Qt's CMake targets select the matching Qt 6 QML tools even on systems
 with Qt 5 tools on PATH. The demo uses installed Qt Quick and Qt Quick Controls
 modules, plus Qt Network for the local socket. The demo resolver uses Linux
-input keycode definitions from the system headers. The build has no libevdev
-or libudev linkage.
+input keycode definitions from the system headers. The separately launched
+recorder and recording-enabled editor use the installed Linux libraries through
+CMake's pkg-config targets. The profile and simulation service remains independent
+of keyboard capture.
 
 Run these commands from the repository root.
 
@@ -67,7 +71,7 @@ profile. Create or select a profile, choose **Edit** to save bindings, and
 choose **Activate** to start simulation with the saved revision. In hold mode,
 click an ordinary control to press it and click again to release it. Use
 **Release all** to return to a neutral keyboard state. The output trace shows
-the simulated transitions. No events are sent to the operating system.
+the simulated transitions. The simulator sends no keyboard events to the operating system.
 
 The default endpoint is in the user's private runtime directory. Both
 executables accept `--socket /absolute/private/directory/service.sock` and
@@ -89,4 +93,48 @@ The headless tests clear the desktop's GLX vendor override and the editor test
 also clears input-method overrides. On the verified Omarchy host, inherited
 NVIDIA GLX and Fcitx plugins allocated memory even in headless runs and
 LeakSanitizer reported those allocations at exit. The isolated test environment
-keeps leak detection active while testing the editor and service.
+keeps leak detection active while testing the editor, service, and fake
+recording adapters.
+
+## Record a layer-one shortcut
+
+```sh
+build/dev/bin/xkeys --demo --recording
+ctest --test-dir build/dev -L recording --output-on-failure --no-tests=error
+```
+
+In a Hyprland Wayland session, select a saved profile, choose **Edit**, select an
+accessible USB keyboard, and click a layer-one control. Selection only displays its
+binding; it does not acquire the keyboard or start a countdown. Click **Start
+recording**, wait for **Press your shortcut**, then press and release the keys
+together. Review the draft and choose **Save** or **Cancel**. The saved shortcut
+appears on the control only after the
+profile service acknowledges the write. Recording uses the selected keyboard's
+layout as reported by Hyprland. A custom global keymap file prevents recording
+when the editor cannot establish the key labels. Stored codes identify physical
+keys.
+
+The optional recorder uses existing session access. A keyboard with inaccessible
+or busy interfaces cannot record, and the editor reports why. The editor and
+helper verify that the selected USB group still matches the current inventory.
+Where the inventory identifies wired and receiver interfaces as routes for one
+keyboard, the helper captures them together. Other devices stay outside the
+capture boundary. Cancel with the mouse or move focus away from the
+editor. Release held keys to let the helper drain before it exits. The drain can
+wait up to two seconds for keys to return to neutral. The helper has a ten-second
+capture deadline and a fifteen-second total deadline. The editor has a watchdog
+for a helper that stops responding. Compositor handling after a forced stop
+requires the supervised release-bind trial.
+
+The overlap check reports possible conflicts with Hyprland bindings and common
+virtual-terminal shortcuts for later playback. Application hotkeys may be missing.
+For a known conflict or incomplete coverage, choose **Use binding anyway** or
+**Record different shortcut**. Recording creates a profile binding without
+activating it or sending keys.
+The default `--demo` launch keeps recording disabled. Automated tests use fake
+keyboards, helper streams, and compositor metadata.
+
+The **Recording device** list can include composite devices such as a gaming mouse
+that exposes keyboard interfaces. Those entries remain available for keyboard
+shortcut events. Native mouse buttons and wheel actions are not supported by the
+current recorder, profile format or output implementation.

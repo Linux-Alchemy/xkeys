@@ -38,7 +38,14 @@ bool returnsProfile(Operation operation)
 }
 } // namespace
 
-Controller::Controller(QObject *parent) : QObject(parent)
+Controller::Controller(QObject *parent)
+    : Controller(makeCaptureBackend(false), makeShortcutContext(), parent)
+{
+}
+
+Controller::Controller(std::unique_ptr<CaptureBackend> capture,
+                       std::unique_ptr<ShortcutContext> context, QObject *parent)
+    : QObject(parent), m_capture(std::move(capture)), m_context(std::move(context))
 {
     m_socket.setReadBufferSize(maxFrameBytes + 1);
     m_retry.setInterval(75);
@@ -59,6 +66,52 @@ Controller::Controller(QObject *parent) : QObject(parent)
     });
     connect(&m_socket, &QLocalSocket::errorOccurred, this, &Controller::handleSocketError);
     connect(&m_socket, &QLocalSocket::readyRead, this, &Controller::readReplies);
+
+    m_recordingTick.setInterval(250);
+    connect(&m_recordingTick, &QTimer::timeout, this, [this] {
+        if (recordingRemainingSeconds() == 0) {
+            cancelRecording();
+        } else {
+            emit recordingChanged();
+        }
+    });
+    connect(
+        m_context.get(), &ShortcutContext::prepared, this, [this](bool ok, const QString &reason) {
+            if (m_recordState != RecordState::Preparing || m_captureStarted) {
+                return;
+            }
+            const auto *keyboard = selectedKeyboard();
+            if (!ok || !validRecordTarget() || !keyboard || !keyboard->accessible) {
+                discardDraft(RecordState::Error,
+                             reason.isEmpty() ? QStringLiteral("Recording could not be prepared.")
+                                              : reason);
+                refreshRecordingKeyboards();
+                return;
+            }
+            m_layoutKeyboardId = keyboard->id;
+            m_captureStarted = true;
+            emit recordingChanged();
+            emit resolutionChanged();
+            m_capture->start(*keyboard);
+        });
+    connect(m_capture.get(), &CaptureBackend::ready, this, [this] {
+        if (m_recordState == RecordState::Preparing && m_captureStarted && validRecordTarget()) {
+            m_captureClock.start();
+            m_recordingTick.start();
+            setRecordState(RecordState::Recording, QStringLiteral("Press your shortcut."));
+        }
+    });
+    connect(m_capture.get(), &CaptureBackend::progress, this, [this](const QList<int> &codes) {
+        if (m_recordState == RecordState::Recording && validRecordTarget()) {
+            m_draftChord = m_context->label(codes);
+            emit recordingChanged();
+        }
+    });
+    connect(m_capture.get(), &CaptureBackend::completed, this, &Controller::finishCapture);
+    connect(m_capture.get(), &CaptureBackend::cancelled, this,
+            [this](const QString &reason) { captureEnded(reason, false); });
+    connect(m_capture.get(), &CaptureBackend::failed, this,
+            [this](const QString &reason) { captureEnded(reason, true); });
 }
 
 void Controller::startDemo(const QString &socketPath, const QString &profilesDir)
@@ -104,7 +157,7 @@ QString Controller::selectedControl() const
 QString Controller::bindingLabel() const
 {
     if (editing()) {
-        return m_editControl.isEmpty() ? QString{} : chordLabel(editBinding().chord);
+        return m_editControl.isEmpty() ? QString{} : savedChordLabel(editBinding().chord);
     }
     return m_resolution.label;
 }
@@ -134,7 +187,7 @@ QString Controller::activeProfileName() const { return m_snapshot.activeName; }
 QString Controller::mode() const { return modeName(m_snapshot.mode); }
 bool Controller::editing() const
 {
-    return m_snapshot.mode == Mode::Edit && m_selected &&
+    return m_editLease && m_snapshot.mode == Mode::Edit && m_selected &&
            m_snapshot.editProfileId == m_selected->id;
 }
 int Controller::activeLayer() const { return m_snapshot.activeLayer; }
@@ -157,13 +210,390 @@ QStringList Controller::outputEvents() const
     return events;
 }
 
-QStringList Controller::sampleShortcuts() const
+bool Controller::recordingAvailable() const { return m_capture->available(); }
+
+QString Controller::recordingUnavailableReason() const
 {
-    QStringList shortcuts;
-    for (const auto &chord : sampleChords) {
-        shortcuts.append(chordLabel(chord));
+    return recordingAvailable() ? m_inventoryError : m_capture->unavailableReason();
+}
+
+QVariantList Controller::recordingKeyboards() const
+{
+    QVariantList result;
+    for (const auto &keyboard : m_keyboards) {
+        result.append(QVariantMap{{QStringLiteral("id"), keyboard.id},
+                                  {QStringLiteral("name"), keyboard.name},
+                                  {QStringLiteral("accessible"), keyboard.accessible},
+                                  {QStringLiteral("reason"), keyboard.reason}});
     }
-    return shortcuts;
+    return result;
+}
+
+QString Controller::recordingKeyboardId() const { return m_recordingKeyboardId; }
+
+QString Controller::recordingState() const
+{
+    switch (m_recordState) {
+    case RecordState::Idle:
+        return QStringLiteral("Idle");
+    case RecordState::Preparing:
+        return QStringLiteral("Preparing");
+    case RecordState::Recording:
+        return QStringLiteral("Recording");
+    case RecordState::Stopping:
+        return QStringLiteral("Stopping");
+    case RecordState::Draft:
+        return QStringLiteral("Draft");
+    case RecordState::Saving:
+        return QStringLiteral("Saving");
+    case RecordState::Error:
+        return QStringLiteral("Error");
+    }
+    return {};
+}
+
+QString Controller::recordingMessage() const { return m_recordMessage; }
+QString Controller::draftChord() const { return m_draftChord; }
+QString Controller::draftActionLabel() const { return m_draftActionLabel; }
+
+bool Controller::recordingBusy() const
+{
+    return m_recordState == RecordState::Preparing || m_recordState == RecordState::Recording ||
+           m_recordState == RecordState::Stopping;
+}
+
+bool Controller::canSaveDraft() const
+{
+    if (m_recordState != RecordState::Draft || !validRecordTarget() || m_draftCodes.isEmpty() ||
+        ((!m_conflictsChecked || !m_conflicts.isEmpty()) && !m_conflictAcknowledged)) {
+        return false;
+    }
+    auto profile = *m_selected;
+    profile.layers[0].insert(m_recordTarget->control, {m_draftActionLabel, m_draftCodes});
+    return static_cast<bool>(validateProfile(profile));
+}
+
+QStringList Controller::bindingConflicts() const { return m_conflicts; }
+bool Controller::conflictsChecked() const { return m_conflictsChecked; }
+bool Controller::conflictAcknowledged() const { return m_conflictAcknowledged; }
+QString Controller::conflictCheckNote() const
+{
+    return m_recordState == RecordState::Draft || m_recordState == RecordState::Saving
+               ? m_context->advisory()
+               : QString{};
+}
+
+QVariantMap Controller::controlLabels() const
+{
+    const bool matchesActive = m_selected && m_snapshot.mode == Mode::Active &&
+                               m_snapshot.activeId == m_selected->id &&
+                               m_snapshot.activeRevision == m_selected->revision;
+    if (!editing() && !matchesActive) {
+        return {};
+    }
+
+    const int layer = editing() ? m_editLayer : m_snapshot.activeLayer;
+    const auto &bindings = m_selected->layers.at(static_cast<std::size_t>(layer - 1));
+    QVariantMap labels;
+    for (auto entry = bindings.cbegin(); entry != bindings.cend(); ++entry) {
+        const auto text =
+            matchesActive && m_selected->thumbLayer && entry.key() == QStringLiteral("thumb")
+                ? QStringLiteral("Layer 2")
+                : savedChordLabel(entry.value().chord);
+        labels.insert(entry.key(), text);
+    }
+    return labels;
+}
+
+void Controller::setDraftActionLabel(const QString &label)
+{
+    if (m_recordState == RecordState::Draft && label != m_draftActionLabel) {
+        m_draftActionLabel = label;
+        emit recordingChanged();
+    }
+}
+
+int Controller::recordingRemainingSeconds() const
+{
+    if (m_recordState != RecordState::Recording) {
+        return 0;
+    }
+    return std::max(0, static_cast<int>((10000 - m_captureClock.elapsed() + 999) / 1000));
+}
+
+void Controller::refreshRecordingKeyboards()
+{
+    if (!recordingAvailable() || recordingBusy() || m_recordState == RecordState::Saving) {
+        return;
+    }
+    const auto *previous = selectedKeyboard();
+    const auto approved = previous ? std::optional<KeyboardSelection>(*previous) : std::nullopt;
+    auto inventory = m_capture->keyboards();
+    if (inventory) {
+        m_keyboards = std::move(inventory.value());
+        m_inventoryError =
+            m_keyboards.isEmpty() ? QStringLiteral("No supported USB keyboards found.") : QString{};
+    } else {
+        m_inventoryError = inventory.error().message;
+        m_keyboards.clear();
+    }
+    const auto *keyboard = selectedKeyboard();
+    const bool changed =
+        approved && (!keyboard || !keyboard->accessible || keyboard->name != approved->name ||
+                     keyboard->nodes != approved->nodes ||
+                     keyboard->interfaceNames != approved->interfaceNames ||
+                     keyboard->typingNames != approved->typingNames ||
+                     keyboard->fingerprint != approved->fingerprint);
+    if (!keyboard || !keyboard->accessible || changed) {
+        m_recordingKeyboardId.clear();
+        m_layoutKeyboardId.clear();
+    }
+    if (changed && inventory) {
+        m_inventoryError = QStringLiteral("The selected keyboard changed. Choose it again.");
+    }
+    emit recordingChanged();
+    emit resolutionChanged();
+}
+
+void Controller::setRecordingKeyboard(const QString &id)
+{
+    if (!recordingAvailable() || recordingBusy() || m_recordState == RecordState::Saving ||
+        id == m_recordingKeyboardId) {
+        return;
+    }
+    const auto item = std::ranges::find(m_keyboards, id, &KeyboardSelection::id);
+    if (!id.isEmpty() && (item == m_keyboards.end() || !item->accessible)) {
+        m_recordingKeyboardId.clear();
+        m_layoutKeyboardId.clear();
+        discardDraft(RecordState::Error, item != m_keyboards.end() && !item->reason.isEmpty()
+                                             ? item->reason
+                                             : QStringLiteral("Choose an accessible keyboard."));
+        emit resolutionChanged();
+        return;
+    }
+    m_recordingKeyboardId = id;
+    m_layoutKeyboardId.clear();
+    if (!id.isEmpty()) {
+        m_inventoryError.clear();
+    }
+    setError({});
+    discardDraft(RecordState::Idle);
+    emit resolutionChanged();
+}
+
+void Controller::setWindowActive(bool active)
+{
+    m_windowActive = active;
+    if (!active && (recordingBusy() || m_recordState == RecordState::Draft)) {
+        cancelRecording();
+    }
+}
+
+void Controller::beginEdit(const QString &controlId, int layer)
+{
+    if (!canChange() || !editing() || !knownControl(controlId)) {
+        return;
+    }
+    if (recordingAvailable() && layer != 1) {
+        discardDraft(RecordState::Error, QStringLiteral("Recording is available for Layer 1."));
+        return;
+    }
+    if (layer != m_editLayer) {
+        return;
+    }
+
+    m_editControl = controlId;
+    setError({});
+    emit profileChanged();
+    emit resolutionChanged();
+    if (thumbLayer() && controlId == QStringLiteral("thumb")) {
+        discardDraft(
+            RecordState::Idle,
+            QStringLiteral("The thumb controls Layer 2. You can clear its saved shortcut."));
+        return;
+    }
+    if (!recordingAvailable()) {
+        discardDraft(RecordState::Idle, recordingUnavailableReason());
+        return;
+    }
+    discardDraft(RecordState::Idle,
+                 QStringLiteral("Choose your recording device, then click Start recording."));
+}
+
+void Controller::recordAgain()
+{
+    if (!canChange() || !editing() || m_editLayer != 1 || !knownControl(m_editControl) ||
+        !recordingAvailable() || (thumbLayer() && m_editControl == QStringLiteral("thumb"))) {
+        return;
+    }
+    if (!m_windowActive) {
+        discardDraft(RecordState::Error, QStringLiteral("Focus the editor before recording."));
+        return;
+    }
+    const auto *keyboard = selectedKeyboard();
+    if (!keyboard || !keyboard->accessible) {
+        discardDraft(RecordState::Error, QStringLiteral("Choose an accessible keyboard first."));
+        refreshRecordingKeyboards();
+        return;
+    }
+
+    refreshRecordingKeyboards();
+    keyboard = selectedKeyboard();
+    if (!keyboard || !keyboard->accessible) {
+        discardDraft(RecordState::Error,
+                     m_inventoryError.isEmpty()
+                         ? QStringLiteral("The selected keyboard changed. Choose it again.")
+                         : m_inventoryError);
+        return;
+    }
+
+    discardDraft(RecordState::Preparing,
+                 QStringLiteral("Preparing keyboard. Wait before pressing keys."));
+    m_recordTarget = RecordTarget{m_selected->id, m_selected->revision, m_editControl};
+    m_draftActionLabel = editBinding().label;
+    m_layoutKeyboardId.clear();
+    m_context->refresh(*keyboard);
+}
+
+void Controller::saveDraft()
+{
+    if (!canSaveDraft()) {
+        return;
+    }
+    auto profile = *m_selected;
+    profile.layers[0].insert(m_recordTarget->control, {m_draftActionLabel, m_draftCodes});
+    setRecordState(RecordState::Saving, QStringLiteral("Saving shortcut."));
+    saveProfile(profile);
+}
+
+void Controller::cancelDraft()
+{
+    if (m_recordState != RecordState::Saving) {
+        cancelRecording();
+    }
+}
+
+void Controller::setConflictAcknowledged(bool acknowledged)
+{
+    if (m_recordState == RecordState::Draft && m_conflictAcknowledged != acknowledged) {
+        m_conflictAcknowledged = acknowledged;
+        emit recordingChanged();
+    }
+}
+
+bool Controller::canChange() const
+{
+    return connected() && !pending() && !recordingBusy() && m_recordState != RecordState::Saving;
+}
+
+bool Controller::validRecordTarget() const
+{
+    return connected() && !pending() && m_windowActive && editing() && m_recordTarget &&
+           m_selected->id == m_recordTarget->profileId &&
+           m_selected->revision == m_recordTarget->revision &&
+           m_editControl == m_recordTarget->control && m_editLayer == 1;
+}
+
+const KeyboardSelection *Controller::selectedKeyboard() const
+{
+    const auto item = std::ranges::find(m_keyboards, m_recordingKeyboardId, &KeyboardSelection::id);
+    return item == m_keyboards.cend() ? nullptr : &*item;
+}
+
+QString Controller::savedChordLabel(const QList<int> &codes) const
+{
+    if (!m_layoutKeyboardId.isEmpty() && m_layoutKeyboardId == m_recordingKeyboardId) {
+        const auto label = m_context->label(codes);
+        if (!label.isEmpty()) {
+            return label;
+        }
+    }
+    return chordLabel(codes);
+}
+
+void Controller::finishCapture(const QList<int> &codes)
+{
+    if (!m_captureStarted) {
+        return;
+    }
+    m_captureStarted = false;
+    m_recordingTick.stop();
+    if (m_recordState == RecordState::Stopping) {
+        discardDraft(RecordState::Idle, QStringLiteral("Recording cancelled."));
+        return;
+    }
+    if (m_recordState != RecordState::Recording || !validRecordTarget()) {
+        discardDraft(RecordState::Error,
+                     QStringLiteral("The recording target is no longer available."));
+        return;
+    }
+
+    auto profile = *m_selected;
+    profile.layers[0].insert(m_recordTarget->control, {m_draftActionLabel, codes});
+    const auto label = m_context->label(codes);
+    if (codes.isEmpty() || label.isEmpty() || !validateProfile(profile)) {
+        discardDraft(RecordState::Error,
+                     QStringLiteral("The recorded keys could not be mapped to a shortcut."));
+        return;
+    }
+
+    m_draftChord = label;
+    m_draftCodes = codes;
+    m_conflicts = m_context->conflicts(codes);
+    m_conflictsChecked = m_context->bindingsAvailable();
+    setRecordState(RecordState::Draft, QStringLiteral("Review the shortcut, then Save or Cancel."));
+}
+
+void Controller::captureEnded(const QString &reason, bool failed)
+{
+    if (!m_captureStarted) {
+        return;
+    }
+    m_captureStarted = false;
+    discardDraft(failed ? RecordState::Error : RecordState::Idle, reason);
+    if (failed) {
+        refreshRecordingKeyboards();
+    }
+}
+
+void Controller::discardDraft(RecordState next, const QString &message)
+{
+    m_recordingTick.stop();
+    m_recordTarget.reset();
+    m_draftCodes.clear();
+    m_draftChord.clear();
+    m_draftActionLabel.clear();
+    m_conflicts.clear();
+    m_conflictsChecked = false;
+    m_conflictAcknowledged = false;
+    setRecordState(next, message);
+}
+
+void Controller::setRecordState(RecordState state, const QString &message)
+{
+    m_recordState = state;
+    m_recordMessage = message;
+    emit recordingChanged();
+}
+
+void Controller::cancelRecording()
+{
+    if (m_recordState == RecordState::Stopping || m_recordState == RecordState::Idle) {
+        return;
+    }
+    if (m_captureStarted) {
+        m_recordingTick.stop();
+        setRecordState(RecordState::Stopping, QStringLiteral("Stopping. Release all keys."));
+        m_capture->cancel();
+    } else {
+        discardDraft(RecordState::Idle, QStringLiteral("Recording cancelled."));
+    }
+}
+
+void Controller::clearEditLease()
+{
+    m_editLease = false;
+    cancelRecording();
 }
 
 QString Controller::statusText() const
@@ -193,14 +623,16 @@ QVariantList Controller::controls() const
 
 void Controller::createProfile(const QString &name)
 {
-    if (connected() && !pending()) {
+    if (canChange()) {
+        discardDraft(RecordState::Idle);
         send(Operation::CreateProfile, {{QStringLiteral("name"), name}});
     }
 }
 
 void Controller::selectProfile(const QString &id)
 {
-    if (connected() && !pending()) {
+    if (canChange()) {
+        discardDraft(RecordState::Idle);
         send(Operation::LoadProfile, {{QStringLiteral("profileId"), id}});
     }
 }
@@ -213,7 +645,8 @@ QJsonObject Controller::selectedVersion() const
 
 void Controller::renameSelected(const QString &name)
 {
-    if (connected() && !pending() && m_selected) {
+    if (canChange() && m_selected) {
+        discardDraft(RecordState::Idle);
         auto args = selectedVersion();
         args.insert(QStringLiteral("name"), name);
         send(Operation::RenameProfile, args);
@@ -222,45 +655,55 @@ void Controller::renameSelected(const QString &name)
 
 void Controller::deleteSelected()
 {
-    if (connected() && !pending() && m_selected) {
+    if (canChange() && m_selected) {
+        discardDraft(RecordState::Idle);
         send(Operation::DeleteProfile, selectedVersion());
     }
 }
 
 void Controller::editSelected()
 {
-    if (connected() && !pending() && m_selected) {
+    if (canChange() && m_selected) {
+        discardDraft(RecordState::Idle);
         send(Operation::Edit, {{QStringLiteral("profileId"), m_selected->id}});
     }
 }
 
 void Controller::activateSelected()
 {
-    if (connected() && !pending() && m_selected) {
+    if (canChange() && m_selected) {
+        discardDraft(RecordState::Idle);
         send(Operation::Activate, selectedVersion());
     }
 }
 
 void Controller::deactivate()
 {
-    if (connected() && !pending()) {
+    if (canChange()) {
+        discardDraft(RecordState::Idle);
         send(Operation::Deactivate);
     }
 }
 
 void Controller::setEditLayer(int layer)
 {
-    if (connected() && !pending() && editing() && (layer == 1 || layer == 2) &&
-        layer != m_editLayer) {
+    if (layer == 2 && recordingAvailable() && canChange()) {
+        setError(QStringLiteral("Recording is available for Layer 1."));
+        return;
+    }
+    if (canChange() && editing() && (layer == 1 || layer == 2) && layer != m_editLayer) {
+        discardDraft(RecordState::Idle);
         m_editLayer = layer;
         emit profileChanged();
         emit resolutionChanged();
+        emit recordingChanged();
     }
 }
 
 void Controller::setThumbLayer(bool enabled)
 {
-    if (connected() && !pending() && editing()) {
+    if (canChange() && editing()) {
+        discardDraft(RecordState::Idle);
         auto profile = *m_selected;
         profile.thumbLayer = enabled;
         saveProfile(profile);
@@ -280,13 +723,14 @@ void Controller::clearBinding() { updateBinding({}); }
 
 void Controller::updateBinding(const Binding &binding)
 {
-    if (!connected() || pending() || !editing() || m_editControl.isEmpty()) {
+    if (!canChange() || !editing() || m_editControl.isEmpty()) {
         return;
     }
     if (!binding.chord.isEmpty() && thumbLayer() && m_editControl == QStringLiteral("thumb")) {
         setError(QStringLiteral("Disable the thumb layer before assigning a thumb shortcut."));
         return;
     }
+    discardDraft(RecordState::Idle);
     auto profile = *m_selected;
     profile.layers.at(static_cast<std::size_t>(m_editLayer - 1)).insert(m_editControl, binding);
     saveProfile(profile);
@@ -305,7 +749,7 @@ void Controller::saveProfile(const Profile &profile)
 
 void Controller::simulate(const QString &controlId, bool hold)
 {
-    if (connected() && !pending()) {
+    if (canChange()) {
         const auto action = hold ? QStringLiteral("toggle") : QStringLiteral("tap");
         send(Operation::Input,
              {{QStringLiteral("control"), controlId}, {QStringLiteral("action"), action}});
@@ -314,29 +758,27 @@ void Controller::simulate(const QString &controlId, bool hold)
 
 void Controller::releaseAll()
 {
-    if (connected() && !pending()) {
+    if (canChange()) {
         send(Operation::Reset);
     }
 }
 
 void Controller::selectControl(const QString &controlId)
 {
-    if (!connected() || pending()) {
+    if (!canChange()) {
         return;
     }
-    if (!editing()) {
+    if (editing()) {
+        beginEdit(controlId, m_editLayer);
+    } else {
         simulate(controlId, false);
-    } else if (knownControl(controlId)) {
-        m_editControl = controlId;
-        setError({});
-        emit profileChanged();
-        emit resolutionChanged();
     }
 }
 
 void Controller::stopDemo()
 {
-    if (connected() && !pending()) {
+    if (canChange()) {
+        discardDraft(RecordState::Idle);
         send(Operation::Stop);
     }
 }
@@ -426,6 +868,7 @@ void Controller::send(Operation operation, const QJsonObject &args)
     m_pending = Request{QUuid::createUuid().toString(QUuid::WithoutBraces), operation, args};
     if (!alreadyPending) {
         emit pendingChanged();
+        emit recordingChanged();
     }
     m_deadline.start(timeoutMs);
 
@@ -457,6 +900,13 @@ void Controller::readReplies()
             fail(error);
         } else {
             setError(error);
+            if (operation == Operation::SaveProfile && m_recordState == RecordState::Saving) {
+                if (m_windowActive) {
+                    setRecordState(RecordState::Draft, error);
+                } else {
+                    discardDraft(RecordState::Idle);
+                }
+            }
             clearPending();
         }
         return;
@@ -478,6 +928,7 @@ void Controller::readReplies()
     } else {
         if (operation == Operation::Profiles && m_state == State::Handshake) {
             setState(State::Ready);
+            refreshRecordingKeyboards();
         } else if (operation == Operation::Stop) {
             setState(State::Disconnected);
             clearRuntime();
@@ -626,16 +1077,26 @@ bool Controller::applyReply(const Request &request, const QJsonObject &data)
     if (snapshot) {
         m_snapshot = std::move(*snapshot);
     }
+    if (operation == Operation::Edit) {
+        m_editLease = true;
+    } else if (m_snapshot.mode != Mode::Edit || selectedProfileId() != m_snapshot.editProfileId) {
+        clearEditLease();
+    }
+    if (operation == Operation::SaveProfile && m_recordState == RecordState::Saving) {
+        discardDraft(RecordState::Idle, QStringLiteral("Saved."));
+    }
     if (selectionChanged || hasStateData) {
         emit simulationChanged();
         emit profileChanged();
         emit resolutionChanged();
+        emit recordingChanged();
     }
     return true;
 }
 
 void Controller::clearRuntime()
 {
+    clearEditLease();
     m_editControl.clear();
     m_editLayer = 1;
     m_snapshot = {};
@@ -643,6 +1104,7 @@ void Controller::clearRuntime()
     emit simulationChanged();
     emit profileChanged();
     emit resolutionChanged();
+    emit recordingChanged();
 }
 
 void Controller::clearPending()
@@ -651,6 +1113,7 @@ void Controller::clearPending()
     if (m_pending) {
         m_pending.reset();
         emit pendingChanged();
+        emit recordingChanged();
     }
 }
 

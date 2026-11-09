@@ -1,5 +1,7 @@
 #pragma once
 
+#include "capture_backend.h"
+#include "hyprland_context.h"
 #include "ipc/protocol.h"
 
 #include <QElapsedTimer>
@@ -44,10 +46,29 @@ class Controller : public QObject
     Q_PROPERTY(QStringList heldControls READ heldControls NOTIFY simulationChanged)
     Q_PROPERTY(QString heldOutputLabel READ heldOutputLabel NOTIFY simulationChanged)
     Q_PROPERTY(QStringList outputEvents READ outputEvents NOTIFY simulationChanged)
-    Q_PROPERTY(QStringList sampleShortcuts READ sampleShortcuts CONSTANT)
+    Q_PROPERTY(bool recordingAvailable READ recordingAvailable NOTIFY recordingChanged)
+    Q_PROPERTY(
+        QString recordingUnavailableReason READ recordingUnavailableReason NOTIFY recordingChanged)
+    Q_PROPERTY(QVariantList recordingKeyboards READ recordingKeyboards NOTIFY recordingChanged)
+    Q_PROPERTY(QString recordingKeyboardId READ recordingKeyboardId NOTIFY recordingChanged)
+    Q_PROPERTY(QString recordingState READ recordingState NOTIFY recordingChanged)
+    Q_PROPERTY(QString recordingMessage READ recordingMessage NOTIFY recordingChanged)
+    Q_PROPERTY(QString draftChord READ draftChord NOTIFY recordingChanged)
+    Q_PROPERTY(bool recordingBusy READ recordingBusy NOTIFY recordingChanged)
+    Q_PROPERTY(bool canSaveDraft READ canSaveDraft NOTIFY recordingChanged)
+    Q_PROPERTY(QStringList bindingConflicts READ bindingConflicts NOTIFY recordingChanged)
+    Q_PROPERTY(bool conflictsChecked READ conflictsChecked NOTIFY recordingChanged)
+    Q_PROPERTY(QString conflictCheckNote READ conflictCheckNote NOTIFY recordingChanged)
+    Q_PROPERTY(bool conflictAcknowledged READ conflictAcknowledged NOTIFY recordingChanged)
+    Q_PROPERTY(QVariantMap controlLabels READ controlLabels NOTIFY recordingChanged)
+    Q_PROPERTY(QString draftActionLabel READ draftActionLabel WRITE setDraftActionLabel NOTIFY
+                   recordingChanged)
+    Q_PROPERTY(int recordingRemainingSeconds READ recordingRemainingSeconds NOTIFY recordingChanged)
 
   public:
     explicit Controller(QObject *parent = nullptr);
+    Controller(std::unique_ptr<CaptureBackend> capture, std::unique_ptr<ShortcutContext> context,
+               QObject *parent = nullptr);
     void startDemo(const QString &socketPath = {}, const QString &profilesDir = {});
 
     bool connected() const;
@@ -74,7 +95,32 @@ class Controller : public QObject
     QStringList heldControls() const;
     QString heldOutputLabel() const;
     QStringList outputEvents() const;
-    QStringList sampleShortcuts() const;
+    bool recordingAvailable() const;
+    QString recordingUnavailableReason() const;
+    QVariantList recordingKeyboards() const;
+    QString recordingKeyboardId() const;
+    QString recordingState() const;
+    QString recordingMessage() const;
+    QString draftChord() const;
+    bool recordingBusy() const;
+    bool canSaveDraft() const;
+    QStringList bindingConflicts() const;
+    bool conflictsChecked() const;
+    QString conflictCheckNote() const;
+    bool conflictAcknowledged() const;
+    QVariantMap controlLabels() const;
+    QString draftActionLabel() const;
+    void setDraftActionLabel(const QString &label);
+    int recordingRemainingSeconds() const;
+
+    Q_INVOKABLE void refreshRecordingKeyboards();
+    Q_INVOKABLE void setRecordingKeyboard(const QString &id);
+    Q_INVOKABLE void setWindowActive(bool active);
+    Q_INVOKABLE void beginEdit(const QString &controlId, int layer);
+    Q_INVOKABLE void recordAgain();
+    Q_INVOKABLE void saveDraft();
+    Q_INVOKABLE void cancelDraft();
+    Q_INVOKABLE void setConflictAcknowledged(bool acknowledged);
 
     Q_INVOKABLE void createProfile(const QString &name);
     Q_INVOKABLE void selectProfile(const QString &id);
@@ -85,7 +131,8 @@ class Controller : public QObject
     Q_INVOKABLE void deactivate();
     Q_INVOKABLE void setEditLayer(int layer);
     Q_INVOKABLE void setThumbLayer(bool enabled);
-    Q_INVOKABLE void assignSample(int preset, const QString &label);
+    // Legacy demo test fixture.
+    void assignSample(int preset, const QString &label);
     Q_INVOKABLE void clearBinding();
     Q_INVOKABLE void simulate(const QString &controlId, bool hold);
     Q_INVOKABLE void releaseAll();
@@ -101,9 +148,17 @@ class Controller : public QObject
     void profilesChanged();
     void profileChanged();
     void simulationChanged();
+    void recordingChanged();
 
   private:
     enum class State { Disconnected, Connecting, Handshake, Ready };
+    enum class RecordState { Idle, Preparing, Recording, Stopping, Draft, Saving, Error };
+
+    struct RecordTarget {
+        ProfileId profileId;
+        Revision revision;
+        ControlId control;
+    };
 
     void setState(State state);
     void setError(const QString &error);
@@ -120,6 +175,37 @@ class Controller : public QObject
     void saveProfile(const Profile &profile);
     Binding editBinding() const;
     QJsonObject selectedVersion() const;
+    bool canChange() const;
+    bool validRecordTarget() const;
+    const KeyboardSelection *selectedKeyboard() const;
+    QString savedChordLabel(const QList<int> &codes) const;
+    void finishCapture(const QList<int> &codes);
+    void captureEnded(const QString &reason, bool failed);
+    void discardDraft(RecordState next, const QString &message = {});
+    void setRecordState(RecordState state, const QString &message);
+    void cancelRecording();
+    void clearEditLease();
+
+    std::unique_ptr<CaptureBackend> m_capture;
+    std::unique_ptr<ShortcutContext> m_context;
+    QList<KeyboardSelection> m_keyboards;
+    QString m_recordingKeyboardId;
+    QString m_layoutKeyboardId;
+    QString m_inventoryError;
+    std::optional<RecordTarget> m_recordTarget;
+    RecordState m_recordState = RecordState::Idle;
+    QString m_recordMessage;
+    QString m_draftChord;
+    QString m_draftActionLabel;
+    QList<int> m_draftCodes;
+    QStringList m_conflicts;
+    bool m_conflictsChecked = false;
+    bool m_conflictAcknowledged = false;
+    bool m_captureStarted = false;
+    bool m_windowActive = false;
+    bool m_editLease = false;
+    QElapsedTimer m_captureClock;
+    QTimer m_recordingTick;
 
     State m_state = State::Disconnected;
     QString m_socketOverride;
