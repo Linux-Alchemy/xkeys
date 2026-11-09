@@ -81,6 +81,24 @@ struct Profile {
     bool operator==(const Profile &) const = default;
 };
 
+enum class ControlEventType { Press, Release, Repeat };
+
+struct ControlEvent {
+    ControlId control;
+    ControlEventType type;
+};
+
+enum class KeyTransition { Down, Up };
+
+struct OutputEvent {
+    int code;
+    KeyTransition transition;
+
+    bool operator==(const OutputEvent &) const = default;
+};
+
+using OutputBatch = QList<OutputEvent>;
+
 struct Resolution {
     ControlId control;
     int layer = 1;
@@ -89,6 +107,8 @@ struct Resolution {
     bool blank = false;
     bool valid = false;
     QString error;
+    bool layerControl = false;
+    OutputBatch output{};
 };
 
 struct Control {

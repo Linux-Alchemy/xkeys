@@ -10,6 +10,7 @@ Item {
     required property var controls
     required property string selectedControl
     required property bool ready
+    required property var heldControls
 
     signal controlPressed(string controlId)
 
@@ -41,7 +42,7 @@ Item {
             elide: Text.ElideRight
         }
         background: Rectangle {
-            color: root.selectedControl === padButton.controlId ? "#28566a" : (padButton.down ? "#384755" : (padButton.hovered ? "#303b47" : "#242d37"))
+            color: root.heldControls.indexOf(padButton.controlId) >= 0 ? "#496479" : (padButton.down ? "#384755" : (padButton.hovered ? "#303b47" : "#242d37"))
             border.color: padButton.activeFocus ? "#e5e9f0" : (root.selectedControl === padButton.controlId ? "#8dd4e8" : "#43505e")
             border.width: padButton.activeFocus ? 2 : 1
             radius: 3

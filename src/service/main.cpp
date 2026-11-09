@@ -1,15 +1,15 @@
-#include "core/remapper.h"
 #include "ipc/endpoint.h"
 #include "ipc/protocol.h"
+#include "session.h"
 
 #include <QCommandLineParser>
 #include <QCoreApplication>
+#include <QDir>
 #include <QElapsedTimer>
 #include <QFileInfo>
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QLockFile>
-#include <QPointer>
 #include <QTextStream>
 #include <QTimer>
 #include <QUuid>
@@ -25,7 +25,7 @@ using namespace xkeys::ipc;
 class DemoServer : public QObject
 {
   public:
-    explicit DemoServer(const QString &endpoint)
+    DemoServer(const QString &endpoint, const QString &profilesDir) : m_session(profilesDir)
     {
         m_server.setSocketOptions(QLocalServer::UserAccessOption);
         m_server.setMaxPendingConnections(maxPeers);
@@ -53,9 +53,7 @@ class DemoServer : public QObject
             ++m_peers;
             socket->setReadBufferSize(maxFrameBytes + 1);
             connect(socket, &QLocalSocket::disconnected, this, [this, socket] {
-                if (m_testOwner == socket) {
-                    m_testOwner.clear();
-                }
+                m_session.disconnect(*socket);
                 --m_peers;
                 socket->deleteLater();
             });
@@ -107,36 +105,19 @@ class DemoServer : public QObject
             if (request.operation == Operation::Hello) {
                 greeted = true;
                 deadline.stop();
-                if (!sendFrame(socket, successReply(request.id))) {
-                    socket.abort();
-                }
-            } else if (!greeted) {
+            }
+            if (!greeted) {
                 if (!sendFrame(socket,
                                errorReply(request.id, QStringLiteral("Send hello first.")))) {
                     socket.abort();
                 }
-            } else if (request.operation == Operation::Resolve) {
-                if (!sendFrame(socket, resolve(socket, request))) {
-                    socket.abort();
-                }
-            } else {
+            } else if (request.operation == Operation::Stop) {
                 stop(socket, request.id);
                 return;
+            } else if (!sendFrame(socket, m_session.handle(socket, request))) {
+                socket.abort();
             }
         }
-    }
-
-    QJsonObject resolve(QLocalSocket &socket, const Request &request)
-    {
-        if (m_testOwner && m_testOwner != &socket) {
-            return errorReply(request.id, QStringLiteral("Another editor is using the demo."));
-        }
-
-        const Resolution resolution = resolveDemo(request.control);
-        if (resolution.valid) {
-            m_testOwner = &socket;
-        }
-        return resolutionReply(request.id, resolution);
     }
 
     void stop(QLocalSocket &socket, const QString &id)
@@ -153,7 +134,7 @@ class DemoServer : public QObject
     }
 
     QString m_error;
-    QPointer<QLocalSocket> m_testOwner;
+    DemoSession m_session;
     int m_peers = 0;
     QLocalServer m_server;
 };
@@ -193,12 +174,19 @@ QString requestStop(const QString &path)
         }
 
         QString error;
-        Resolution resolution;
-        if (!parseReply(object, request, error, resolution)) {
+        QJsonObject data;
+        if (!parseReply(object, request, error, data)) {
             return QStringLiteral("Invalid reply from the demo service.");
         }
         if (!error.isEmpty()) {
             return error;
+        }
+        const auto state = data.value(QStringLiteral("state")).toObject();
+        const auto profilesDir = data.value(QStringLiteral("profilesDir")).toString();
+        if ((operation == Operation::Hello && (data.size() != 2 || !snapshotFromJson(state) ||
+                                               !QDir::isAbsolutePath(profilesDir))) ||
+            (operation == Operation::Stop && !data.isEmpty())) {
+            return QStringLiteral("Invalid reply data from the demo service.");
         }
     }
     return {};
@@ -221,7 +209,10 @@ int main(int argc, char **argv)
     const QCommandLineOption socket(QStringLiteral("socket"),
                                     QStringLiteral("Use a private absolute socket path."),
                                     QStringLiteral("path"));
-    parser.addOptions({demo, stop, socket});
+    const QCommandLineOption profilesDir(QStringLiteral("profiles-dir"),
+                                         QStringLiteral("Use an absolute demo profiles directory."),
+                                         QStringLiteral("path"));
+    parser.addOptions({demo, stop, socket, profilesDir});
     parser.process(app);
 
     if (!parser.isSet(demo) || !parser.positionalArguments().isEmpty()) {
@@ -236,6 +227,16 @@ int main(int argc, char **argv)
     QString error;
     const QString endpoint = demoEndpoint(parser.value(socket), error);
     if (endpoint.isEmpty()) {
+        diagnostic << error << Qt::endl;
+        return 2;
+    }
+
+    if (parser.isSet(profilesDir) && parser.value(profilesDir).isEmpty()) {
+        diagnostic << "--profiles-dir requires an absolute path." << Qt::endl;
+        return 2;
+    }
+    const QString storage = demoProfilesDir(parser.value(profilesDir), parser.value(socket), error);
+    if (storage.isEmpty()) {
         diagnostic << error << Qt::endl;
         return 2;
     }
@@ -266,7 +267,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    DemoServer server(endpoint);
+    DemoServer server(endpoint, storage);
     if (!server.error().isEmpty()) {
         diagnostic << server.error() << Qt::endl;
         return 1;

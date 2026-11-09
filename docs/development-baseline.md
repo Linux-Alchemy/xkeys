@@ -57,10 +57,25 @@ ctest --test-dir build/dev -L demo --output-on-failure --no-tests=error
 ```
 
 The editor launches the sibling service if needed. Close the editor to leave
-the demo service running, or use **Stop demo** to end it. The default endpoint
-is in the user's private runtime directory. Both executables accept
-`--socket /absolute/private/directory/service.sock` for an isolated session.
-Use the same path for the editor and the stop command.
+the demo service running, or use **Stop demo** to end it. Closing the editor
+releases its held controls and simulated keys. The service retains the active
+profile until explicit deactivation or service restart.
+
+Saved demo profiles live under `$XDG_CONFIG_HOME/xkeys/demo/profiles`, with
+`~/.config` as the usual configuration home. Opening the demo creates no
+profile. Create or select a profile, choose **Edit** to save bindings, and
+choose **Activate** to start simulation with the saved revision. In hold mode,
+click an ordinary control to press it and click again to release it. Use
+**Release all** to return to a neutral keyboard state. The output trace shows
+the simulated transitions. No events are sent to the operating system.
+
+The default endpoint is in the user's private runtime directory. Both
+executables accept `--socket /absolute/private/directory/service.sock` and
+`--profiles-dir /absolute/profiles/directory`. A custom socket with no
+profiles override uses a `profiles` directory beside the socket. The editor
+forwards its chosen directory when it starts the service and verifies the
+directory in the version 2 handshake before reporting Ready. Use the same
+socket for the editor and stop command.
 
 From the repository root, launch or focus the editor through Omarchy.
 

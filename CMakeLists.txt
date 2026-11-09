@@ -42,7 +42,12 @@ target_link_libraries(xkeys_profile_test PRIVATE xkeys_demo Qt6::Test)
 add_test(NAME profiles COMMAND xkeys_profile_test)
 set_tests_properties(profiles PROPERTIES LABELS profiles TIMEOUT 30)
 
-add_executable(xkeysd src/service/main.cpp)
+add_executable(xkeys_remapper_test tests/core/remapper_test.cpp)
+target_link_libraries(xkeys_remapper_test PRIVATE xkeys_demo Qt6::Test)
+add_test(NAME remapper COMMAND xkeys_remapper_test)
+set_tests_properties(remapper PROPERTIES LABELS remapper TIMEOUT 30)
+
+add_executable(xkeysd src/service/main.cpp src/service/session.cpp)
 target_link_libraries(xkeysd PRIVATE xkeys_demo)
 
 set(demo_qml_files qml/Main.qml qml/Keypad.qml qml/TestPopup.qml)

@@ -65,6 +65,27 @@ QString demoEndpoint(const QString &overridePath, QString &error)
     return error.isEmpty() ? path : QString{};
 }
 
+QString demoProfilesDir(const QString &overridePath, const QString &socketOverride, QString &error)
+{
+    error.clear();
+    if (!overridePath.isEmpty()) {
+        if (!overridePath.startsWith(u'/') || overridePath.contains(QChar::Null)) {
+            error = QStringLiteral("--profiles-dir requires an absolute path.");
+            return {};
+        }
+        return QDir::cleanPath(overridePath);
+    }
+    if (!socketOverride.isEmpty()) {
+        return QDir(QFileInfo(socketOverride).absolutePath()).filePath(QStringLiteral("profiles"));
+    }
+    const auto config = QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation);
+    if (config.isEmpty() || !QDir::isAbsolutePath(config)) {
+        error = QStringLiteral("Cannot locate the demo profiles directory.");
+        return {};
+    }
+    return QDir(config).filePath(QStringLiteral("xkeys/demo/profiles"));
+}
+
 QString checkSocketPath(const QString &path)
 {
     const QByteArray name = QFile::encodeName(path);
