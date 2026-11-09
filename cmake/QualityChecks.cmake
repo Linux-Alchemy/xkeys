@@ -10,18 +10,6 @@ file(GLOB_RECURSE cpp_headers CONFIGURE_DEPENDS
     "${PROJECT_SOURCE_DIR}/tests/*.h")
 file(GLOB_RECURSE qml_sources CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/qml/*.qml")
 
-if(NOT qml_sources)
-    # Check the Qt Quick import and lint toolchain before the editor exists.
-    set(qml_sources "${PROJECT_BINARY_DIR}/BuildSmoke.qml")
-    file(GENERATE OUTPUT "${qml_sources}" CONTENT [=[import QtQuick
-
-Item {
-    width: 16
-    height: 16
-}
-]=])
-endif()
-
 add_custom_target(format-check
     COMMAND "${CLANG_FORMAT}" --dry-run --Werror --style=file ${cpp_sources} ${cpp_headers}
     COMMAND "${CMAKE_COMMAND}" "-DQMLFORMAT=$<TARGET_FILE:Qt6::qmlformat>"
@@ -35,6 +23,8 @@ add_custom_target(clang-tidy
     VERBATIM)
 
 add_custom_target(qml-check
-    COMMAND Qt6::qmllint --ignore-settings --max-warnings 0 ${qml_sources}
+    COMMAND Qt6::qmllint --ignore-settings --max-warnings 0 --json -
+        -I "${PROJECT_BINARY_DIR}" ${qml_sources}
+    DEPENDS xkeys_ui
     COMMENT "Linting QML sources"
     VERBATIM)
