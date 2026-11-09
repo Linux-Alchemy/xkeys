@@ -174,7 +174,7 @@ ApplicationWindow {
 
         AppText {
             Layout.fillWidth: true
-            text: !root.controller.connected ? qsTr("Start demo to reconnect.") : root.controller.editing ? qsTr("Layer 1: choose your recording device, click a button, then press the shortcut when the recorder is ready. Save or Cancel explicitly.") : (root.controller.mode === "Active" ? qsTr("Filled controls are held. The result and transitions come from the running demo.") : qsTr("Create or choose a profile, then explicitly Activate or Edit. New profiles have two blank layers."))
+            text: !root.controller.connected ? qsTr("Start demo to reconnect.") : root.controller.editing ? qsTr("Layer 1: select a button and recording device, click Start recording, then press the shortcut when ready. Save or Cancel explicitly.") : (root.controller.mode === "Active" ? qsTr("Filled controls are held. The result and transitions come from the running demo.") : qsTr("Create or choose a profile, then explicitly Activate or Edit. New profiles have two blank layers."))
             color: "#aab6c3"
         }
 

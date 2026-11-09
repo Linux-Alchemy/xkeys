@@ -104,9 +104,11 @@ ctest --test-dir build/dev -L recording --output-on-failure --no-tests=error
 ```
 
 In a Hyprland Wayland session, select a saved profile, choose **Edit**, select an
-accessible USB keyboard, and click a layer-one control. Wait for **Press your
-shortcut**, then press and release the keys together. Review the draft and choose
-**Save** or **Cancel**. The saved shortcut appears on the control only after the
+accessible USB keyboard, and click a layer-one control. Selection only displays its
+binding; it does not acquire the keyboard or start a countdown. Click **Start
+recording**, wait for **Press your shortcut**, then press and release the keys
+together. Review the draft and choose **Save** or **Cancel**. The saved shortcut
+appears on the control only after the
 profile service acknowledges the write. Recording uses the selected keyboard's
 layout as reported by Hyprland. A custom global keymap file prevents recording
 when the editor cannot establish the key labels. Stored codes identify physical

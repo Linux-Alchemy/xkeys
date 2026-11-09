@@ -24,13 +24,17 @@ mid-chord. Other devices remain outside the selected capture boundary.
 
 ## Layer-one assignment
 
-1. Click on-screen button **03**. Wait until the card invites you to press a shortcut.
-   Preparing is not Ready; keep keys released while it prepares.
+1. Click on-screen button **03**. Its saved binding must appear without starting
+   recording or a countdown. You can select another button or clear a binding
+   without capturing the keyboard. Click **Start recording**, then wait until the
+   card invites you to press a shortcut. Preparing is not Ready; keep keys released
+   while it prepares.
 2. Press **Ctrl+Alt+F**, then release all keys. The card must show that draft clearly,
    separately from the previously saved shortcut.
 3. **Save** must update button 03's saved label without activating the profile.
-4. Select 03 again, record another chord, then **Cancel draft**. The prior saved
-   binding must remain. **Clear binding** removes the saved assignment explicitly.
+4. Select 03 again, click **Start recording**, record another chord, then
+   **Cancel draft**. The prior saved binding must remain. **Clear binding** removes
+   the saved assignment explicitly.
 
 No keyboard events should reach another app or trigger a compositor shortcut during
 Ready/Recording. A failure before Ready must report an error rather than invite typing.
@@ -49,8 +53,9 @@ is still simulated in this build.
 
 ## Cancellation and recovery
 
-Check mouse Cancel and focus loss while recording. Release held keys promptly;
-the helper may drain for up to two seconds. Let an idle recording reach its ten-second
+Click **Start recording** before each recovery check. Check mouse Cancel and focus
+loss while recording. Release held keys promptly; the helper may drain for up to
+two seconds. Let an idle recording reach its ten-second
 capture timeout, then confirm the keyboard works normally and no draft was saved.
 The helper also has a fifteen-second total limit and a separate parent watchdog.
 

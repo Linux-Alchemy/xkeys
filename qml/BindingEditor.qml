@@ -138,6 +138,58 @@ Rectangle {
                     font.bold: true
                     wrapMode: Text.Wrap
                 }
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: conflictContent.implicitHeight + 24
+                    visible: root.conflictDecision || root.controller.conflictCheckNote.length > 0
+                    color: root.conflictDecision ? "#392e20" : "#24303b"
+                    border.color: root.conflictDecision ? "#d5a456" : "#43505e"
+                    radius: 5
+
+                    ColumnLayout {
+                        id: conflictContent
+                        anchors.fill: parent
+                        anchors.margins: 12
+                        spacing: 8
+                        Text {
+                            Layout.fillWidth: true
+                            visible: root.conflictDecision
+                            text: root.controller.bindingConflicts.length > 0 ? qsTr("Desktop shortcut conflict") : qsTr("Desktop check incomplete")
+                            textFormat: Text.PlainText
+                            color: "#f4c779"
+                            font.pixelSize: 14
+                            font.bold: true
+                            wrapMode: Text.Wrap
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            visible: root.controller.bindingConflicts.length > 0
+                            text: root.controller.bindingConflicts.join("\n")
+                            textFormat: Text.PlainText
+                            color: "#f0d8b4"
+                            font.pixelSize: 13
+                            wrapMode: Text.Wrap
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            visible: text.length > 0
+                            text: root.controller.conflictCheckNote
+                            textFormat: Text.PlainText
+                            color: root.conflictDecision ? "#d5c5ac" : "#aab6c3"
+                            font.pixelSize: 12
+                            wrapMode: Text.Wrap
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            visible: root.conflictDecision
+                            text: qsTr("Use this binding anyway, or record a different shortcut.")
+                            textFormat: Text.PlainText
+                            color: "#f0d8b4"
+                            font.pixelSize: 13
+                            wrapMode: Text.Wrap
+                        }
+                    }
+                }
                 Text {
                     textFormat: Text.PlainText
                     Layout.fillWidth: true
@@ -156,39 +208,16 @@ Rectangle {
                     maximumLength: 80
                     onTextEdited: root.controller.draftActionLabel = text
                 }
-                Text {
-                    textFormat: Text.PlainText
-                    Layout.fillWidth: true
-                    visible: root.controller.bindingConflicts.length > 0
-                    text: root.controller.bindingConflicts.join("\n")
-                    color: "#f0bd98"
-                    font.pixelSize: 13
-                    wrapMode: Text.Wrap
-                }
-                Text {
-                    textFormat: Text.PlainText
-                    Layout.fillWidth: true
-                    text: root.controller.conflictCheckNote
-                    visible: text.length > 0
-                    color: "#aab6c3"
-                    font.pixelSize: 12
-                    wrapMode: Text.Wrap
-                }
             }
         }
 
-        Text {
+        GridLayout {
             Layout.fillWidth: true
-            visible: root.conflictDecision
-            text: root.controller.bindingConflicts.length > 0 ? qsTr("Desktop overlap: use this binding anyway, or record a different shortcut?") : qsTr("Desktop check incomplete: use this binding anyway, or record a different shortcut?")
-            textFormat: Text.PlainText
-            color: "#f0bd98"
-            font.pixelSize: 13
-            wrapMode: Text.Wrap
-        }
-
-        RowLayout {
-            Layout.fillWidth: true
+            columns: 2
+            uniformCellWidths: true
+            uniformCellHeights: true
+            rowSpacing: 8
+            columnSpacing: 8
             Button {
                 objectName: "saveBindingButton"
                 visible: !root.conflictDecision
@@ -214,15 +243,12 @@ Rectangle {
                 enabled: root.controller.recordingState !== "Idle" && root.controller.recordingState !== "Saving"
                 onClicked: root.controller.cancelDraft()
             }
-        }
-        RowLayout {
-            Layout.fillWidth: true
             Button {
                 objectName: "recordAgainButton"
                 visible: !root.conflictDecision
-                text: qsTr("Record again")
+                text: root.controller.recordingState === "Draft" ? qsTr("Record again") : qsTr("Start recording")
                 Layout.fillWidth: true
-                enabled: root.targetName.length > 0 && root.controller.recordingAvailable && root.controller.recordingKeyboardId.length > 0 && !root.controller.recordingBusy && !root.controller.pending && root.controller.recordingState !== "Saving"
+                enabled: root.targetName.length > 0 && !(root.controller.thumbLayer && root.controller.selectedControl === "thumb") && root.controller.recordingAvailable && root.controller.recordingKeyboardId.length > 0 && !root.controller.recordingBusy && !root.controller.pending && root.controller.recordingState !== "Saving"
                 onClicked: root.controller.recordAgain()
             }
             Button {

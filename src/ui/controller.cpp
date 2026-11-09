@@ -416,6 +416,16 @@ void Controller::beginEdit(const QString &controlId, int layer)
         discardDraft(RecordState::Idle, recordingUnavailableReason());
         return;
     }
+    discardDraft(RecordState::Idle,
+                 QStringLiteral("Choose your recording device, then click Start recording."));
+}
+
+void Controller::recordAgain()
+{
+    if (!canChange() || !editing() || m_editLayer != 1 || !knownControl(m_editControl) ||
+        !recordingAvailable() || (thumbLayer() && m_editControl == QStringLiteral("thumb"))) {
+        return;
+    }
     if (!m_windowActive) {
         discardDraft(RecordState::Error, QStringLiteral("Focus the editor before recording."));
         return;
@@ -439,16 +449,10 @@ void Controller::beginEdit(const QString &controlId, int layer)
 
     discardDraft(RecordState::Preparing,
                  QStringLiteral("Preparing keyboard. Wait before pressing keys."));
-    m_recordTarget = RecordTarget{m_selected->id, m_selected->revision, controlId};
+    m_recordTarget = RecordTarget{m_selected->id, m_selected->revision, m_editControl};
     m_draftActionLabel = editBinding().label;
     m_layoutKeyboardId.clear();
     m_context->refresh(*keyboard);
-}
-
-void Controller::recordAgain()
-{
-    const auto target = m_editControl;
-    beginEdit(target, m_editLayer);
 }
 
 void Controller::saveDraft()

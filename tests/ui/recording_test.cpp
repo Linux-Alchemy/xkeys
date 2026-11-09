@@ -147,6 +147,7 @@ class RecordingUiTest : public QObject
     void init();
     void cleanup();
     void dpadTargetsStayUsableAtBothWindowSizes();
+    void selectionWaitsForExplicitRecording();
     void previewsAndSavesOnlyAfterRelease();
     void cancelsWithoutChangingSavedBinding_data();
     void cancelsWithoutChangingSavedBinding();
@@ -332,6 +333,10 @@ void RecordingUiTest::click(const QString &name)
     auto *item = findItem(name);
     QVERIFY2(item != nullptr, qPrintable(name));
     QTRY_VERIFY(item->isVisible() && item->isEnabled() && item->width() > 0 && item->height() > 0);
+    // Visible controls can still have their previous geometry until the next layout frame.
+    QSignalSpy frame(window_, &QQuickWindow::frameSwapped);
+    window_->update();
+    QVERIFY(frame.wait());
     const auto position =
         item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint();
     QTest::mouseClick(window_, Qt::LeftButton, Qt::NoModifier, position);
@@ -340,8 +345,7 @@ void RecordingUiTest::click(const QString &name)
 void RecordingUiTest::verifyDisabled(const QString &name) const
 {
     const auto *item = findItem(name);
-    QVERIFY2(item != nullptr, qPrintable(name));
-    QVERIFY2(!item->isEnabled(), qPrintable(name));
+    QVERIFY2(item != nullptr && !item->isEnabled(), qPrintable(name));
 }
 
 QString RecordingUiTest::itemText(const QString &name) const
@@ -403,12 +407,50 @@ void RecordingUiTest::dpadTargetsStayUsableAtBothWindowSizes()
     }
 }
 
+void RecordingUiTest::selectionWaitsForExplicitRecording()
+{
+    enterEditor();
+    click(QStringLiteral("pad-key01"));
+    QCOMPARE(controller_->selectedControl(), key01);
+    QCOMPARE(controller_->recordingState(), QStringLiteral("Idle"));
+    verifyDisabled(QStringLiteral("recordAgainButton"));
+    chooseKeyboard();
+    QCOMPARE(itemText(QStringLiteral("recordAgainButton")), QStringLiteral("Start recording"));
+    click(QStringLiteral("pad-key03"));
+    click(QStringLiteral("pad-key01"));
+    QCOMPARE(controller_->selectedControl(), key01);
+    QCOMPARE(controller_->recordingState(), QStringLiteral("Idle"));
+    QCOMPARE(controller_->recordingRemainingSeconds(), 0);
+    QCOMPARE(capture_->starts, 0);
+    QCOMPARE(context_->refreshes, 0);
+    QVERIFY(!capture_->running);
+    verifyStored(key01, {QStringLiteral("Previous"), existingChord});
+    saveImage(QStringLiteral("recording-selected-idle.png"));
+
+    // Clearing a selected binding must not acquire the keyboard either.
+    click(QStringLiteral("clearBindingButton"));
+    QTRY_VERIFY(!controller_->pending());
+    verifyStored(key01, {});
+    QCOMPARE(capture_->starts, 0);
+    QCOMPARE(context_->refreshes, 0);
+    click(QStringLiteral("recordAgainButton"));
+    QTRY_COMPARE(controller_->recordingState(), QStringLiteral("Recording"));
+    QCOMPARE(capture_->starts, 1);
+    QVERIFY(controller_->recordingRemainingSeconds() > 0);
+    click(QStringLiteral("cancelRecordingButton"));
+    QTRY_COMPARE(controller_->recordingState(), QStringLiteral("Idle"));
+    QCOMPARE(controller_->recordingRemainingSeconds(), 0);
+    QCOMPARE(capture_->starts, 1);
+    QCOMPARE(itemText(QStringLiteral("recordAgainButton")), QStringLiteral("Start recording"));
+}
+
 void RecordingUiTest::previewsAndSavesOnlyAfterRelease()
 {
     enterEditor();
     chooseKeyboard();
     const auto blankTile = tileShortcut(key03);
     click(QStringLiteral("pad-key03"));
+    click(QStringLiteral("recordAgainButton"));
     QTRY_COMPARE(controller_->recordingState(), QStringLiteral("Recording"));
     QCOMPARE(capture_->starts, 1);
     QCOMPARE(context_->refreshes, 1);
@@ -478,6 +520,7 @@ void RecordingUiTest::cancelsWithoutChangingSavedBinding()
     chooseKeyboard();
     capture_->autoReady = phase != QStringLiteral("Preparing");
     click(QStringLiteral("pad-key01"));
+    click(QStringLiteral("recordAgainButton"));
     QTRY_COMPARE(capture_->starts, 1);
     if (capture_->autoReady) {
         QTRY_COMPARE(controller_->recordingState(), QStringLiteral("Recording"));
@@ -507,6 +550,7 @@ void RecordingUiTest::rejectsStaleSaveAndKeepsDraft()
     enterEditor();
     chooseKeyboard();
     click(QStringLiteral("pad-key01"));
+    click(QStringLiteral("recordAgainButton"));
     QTRY_COMPARE(controller_->recordingState(), QStringLiteral("Recording"));
     capture_->finish(ordinaryChord);
     QTRY_VERIFY(controller_->canSaveDraft());
@@ -546,6 +590,7 @@ void RecordingUiTest::lossCancelsRecording()
     enterEditor();
     chooseKeyboard();
     click(QStringLiteral("pad-key01"));
+    click(QStringLiteral("recordAgainButton"));
     QTRY_COMPARE(controller_->recordingState(), QStringLiteral("Recording"));
     capture_->preview(ordinaryChord);
     if (released) {
@@ -668,6 +713,11 @@ void RecordingUiTest::replacementRequiresExplicitReselection()
             itemText(QStringLiteral("recordingStatus")).contains(QStringLiteral("changed")));
     }
     click(QStringLiteral("pad-key03"));
+    QCOMPARE(controller_->recordingState(), QStringLiteral("Idle"));
+    if (refreshBeforeClick)
+        verifyDisabled(QStringLiteral("recordAgainButton"));
+    // Also exercise the controller guard if an explicit start races with inventory loss.
+    controller_->recordAgain();
     QTRY_COMPARE(controller_->recordingState(), QStringLiteral("Error"));
     if (!refreshBeforeClick)
         QVERIFY(controller_->recordingMessage().contains(QStringLiteral("changed")));
@@ -679,6 +729,7 @@ void RecordingUiTest::replacementRequiresExplicitReselection()
 
     chooseKeyboard();
     click(QStringLiteral("pad-key03"));
+    click(QStringLiteral("recordAgainButton"));
     QTRY_COMPARE(controller_->recordingState(), QStringLiteral("Recording"));
     QCOMPARE(capture_->starts, 1);
     QCOMPARE(capture_->startedKeyboard, keyboardId);
@@ -705,6 +756,7 @@ void RecordingUiTest::choosesHowToResolveConflictWarning()
     enterEditor();
     chooseKeyboard();
     click(QStringLiteral("pad-key01"));
+    click(QStringLiteral("recordAgainButton"));
     QTRY_COMPARE(controller_->recordingState(), QStringLiteral("Recording"));
     capture_->finish(conflictChord);
     QTRY_COMPARE(controller_->recordingState(), QStringLiteral("Draft"));
@@ -715,6 +767,15 @@ void RecordingUiTest::choosesHowToResolveConflictWarning()
         QVERIFY(!controller_->conflictCheckNote().isEmpty());
     QVERIFY(!controller_->conflictAcknowledged());
     QVERIFY(!controller_->canSaveDraft());
+    if (!recordDifferent && !qEnvironmentVariableIsEmpty("XKEYS_SCREENSHOT_DIR")) {
+        const auto originalSize = window_->size();
+        saveImage(checked ? QStringLiteral("recording-conflict.png")
+                          : QStringLiteral("recording-incomplete-check.png"));
+        window_->resize(window_->minimumSize());
+        saveImage(checked ? QStringLiteral("recording-conflict-small.png")
+                          : QStringLiteral("recording-incomplete-check-small.png"));
+        window_->resize(originalSize);
+    }
     verifyDisabled(QStringLiteral("saveBindingButton"));
     const auto *ordinarySave = findItem(QStringLiteral("saveBindingButton"));
     QVERIFY(ordinarySave != nullptr);
@@ -761,6 +822,7 @@ void RecordingUiTest::recordsEscapeAndModifierOnly()
     enterEditor();
     chooseKeyboard();
     click(QStringLiteral("pad-key03"));
+    click(QStringLiteral("recordAgainButton"));
     QTRY_COMPARE(controller_->recordingState(), QStringLiteral("Recording"));
     capture_->finish(codes);
     QTRY_VERIFY(controller_->canSaveDraft());
