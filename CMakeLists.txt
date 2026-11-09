@@ -30,11 +30,17 @@ target_link_libraries(xkeys_build_smoke PRIVATE Qt6::Core Qt6::Test)
 add_test(NAME build_smoke COMMAND xkeys_build_smoke)
 
 add_library(xkeys_demo STATIC
+    src/core/profile_store.cpp
     src/core/remapper.cpp
     src/ipc/endpoint.cpp
     src/ipc/protocol.cpp)
 target_include_directories(xkeys_demo PUBLIC "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(xkeys_demo PUBLIC Qt6::Core Qt6::Network)
+
+add_executable(xkeys_profile_test tests/core/profile_test.cpp)
+target_link_libraries(xkeys_profile_test PRIVATE xkeys_demo Qt6::Test)
+add_test(NAME profiles COMMAND xkeys_profile_test)
+set_tests_properties(profiles PROPERTIES LABELS profiles TIMEOUT 30)
 
 add_executable(xkeysd src/service/main.cpp)
 target_link_libraries(xkeysd PRIVATE xkeys_demo)
