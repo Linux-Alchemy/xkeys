@@ -1,2 +1,5 @@
 # Local build plan
 /PLAN.md
+
+# CMake build trees
+/build/
