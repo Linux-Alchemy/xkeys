@@ -158,6 +158,7 @@ class Controller : public QObject
         ProfileId profileId;
         Revision revision;
         ControlId control;
+        int layer;
     };
 
     void setState(State state);

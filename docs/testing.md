@@ -1,6 +1,6 @@
 # Recording checkpoint
 
-The current editor supports real keyboard recording on layer 1 and simulated pad
+The current editor supports real keyboard recording on both layers and simulated pad
 output. The physical Tartarus is not acquired or remapped by this build.
 
 ## Start the recording-enabled editor
@@ -38,6 +38,36 @@ mid-chord. Other devices remain outside the selected capture boundary.
 
 No keyboard events should reach another app or trigger a compositor shortcut during
 Ready/Recording. A failure before Ready must report an error rather than invite typing.
+
+## Layer-two assignment and simulation
+
+1. In **Edit**, select **Layer 1**, choose button **03**, and record/save
+   **Ctrl+Alt+F**. Select **Layer 2**: its saved binding and map labels must reflect
+   that layer, with no capture or countdown starting automatically.
+2. On the same button, explicitly start recording and save **Ctrl+Alt+E**.
+   Switch between the layers: each must retain its own shortcut, and output stays off.
+3. On Layer 2, record another draft and **Cancel draft**. Repeat and switch to
+   Layer 1 before saving: the draft must be discarded, with both saved bindings
+   intact. Layer switching is disabled while recording, stopping or saving.
+4. Return to Layer 2 and **Clear binding**. Layer 2 must show Blank while Layer 1
+   retains Ctrl+Alt+F. Record/save Ctrl+Alt+E on Layer 2 again. Close/reopen the
+   editor, select the same profile and Edit; both saved assignments must remain.
+5. Enable **Hold thumb for Layer 2**. The thumb tile reads Layer 2 and cannot record
+   its own shortcut while this setting is enabled. It remains possible to inspect
+   and clear its stored shortcut. Editing Layer 2 is possible with this setting
+   off, but using Layer 2 during playback requires enabling it.
+6. Click **Activate**, then enable **Hold controls** in the simulator. Click the
+   on-screen thumb, then button 03: the result must be Ctrl+Alt+E on Layer 2.
+   Release the thumb first: the map returns to Layer 1, but held output remains
+   Ctrl+Alt+E until button 03 is released. Repeat with button 03 released first;
+   both sequences must end with Held output: None. A plain button 03 press uses
+   Ctrl+Alt+F. A blank Layer 2 button must resolve to Blank.
+7. Repeat the desktop overlap and mouse Cancel/focus-loss checks below on Layer 2.
+   Judge whether the edited layer, saved shortcut and unsaved draft are clear.
+
+All pad presses in this checklist are on-screen simulation. Physical Tartarus
+selection and emitted keystrokes remain future work. Hands-on acceptance is
+recorded separately from the automated checks.
 
 ## Desktop overlap check
 

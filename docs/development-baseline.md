@@ -96,7 +96,7 @@ LeakSanitizer reported those allocations at exit. The isolated test environment
 keeps leak detection active while testing the editor, service, and fake
 recording adapters.
 
-## Record a layer-one shortcut
+## Record a shortcut on either layer
 
 ```sh
 build/dev/bin/xkeys --demo --recording
@@ -104,7 +104,7 @@ ctest --test-dir build/dev -L recording --output-on-failure --no-tests=error
 ```
 
 In a Hyprland Wayland session, select a saved profile, choose **Edit**, select an
-accessible USB keyboard, and click a layer-one control. Selection only displays its
+accessible USB keyboard, choose **Layer 1** or **Layer 2**, and click a control. Selection only displays its
 binding; it does not acquire the keyboard or start a countdown. Click **Start
 recording**, wait for **Press your shortcut**, then press and release the keys
 together. Review the draft and choose **Save** or **Cancel**. The saved shortcut
@@ -113,6 +113,12 @@ profile service acknowledges the write. Recording uses the selected keyboard's
 layout as reported by Hyprland. A custom global keymap file prevents recording
 when the editor cannot establish the key labels. Stored codes identify physical
 keys.
+
+Layer selection changes the map and saved-binding display. It discards an unsaved
+draft and is locked during capture, stopping and Save. Saves and clears affect only
+the edited layer. Enable **Hold thumb for Layer 2** to use that layer in the
+simulator; the thumb then has a dedicated layer role and cannot record a shortcut.
+See [the hands-on checklist](testing.md#layer-two-assignment-and-simulation).
 
 The optional recorder uses existing session access. A keyboard with inaccessible
 or busy interfaces cannot record, and the editor reports why. The editor and

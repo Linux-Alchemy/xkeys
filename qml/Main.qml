@@ -172,9 +172,48 @@ ApplicationWindow {
             }
         }
 
+        RowLayout {
+            Layout.fillWidth: true
+            visible: root.controller.editing
+            spacing: 10
+            AppText {
+                text: qsTr("Edit layer")
+            }
+            ActionButton {
+                objectName: "editLayerOneButton"
+                text: qsTr("Layer 1")
+                highlighted: root.controller.editLayer === 1
+                enabled: !root.controller.pending && !root.controller.recordingBusy && root.controller.recordingState !== "Saving"
+                onClicked: root.controller.setEditLayer(1)
+            }
+            ActionButton {
+                objectName: "editLayerTwoButton"
+                text: qsTr("Layer 2")
+                highlighted: root.controller.editLayer === 2
+                enabled: !root.controller.pending && !root.controller.recordingBusy && root.controller.recordingState !== "Saving"
+                onClicked: root.controller.setEditLayer(2)
+            }
+            CheckBox {
+                objectName: "thumbLayerCheckbox"
+                text: qsTr("Hold thumb for Layer 2")
+                checked: root.controller.thumbLayer
+                enabled: !root.controller.pending && !root.bindingTransaction
+                palette.windowText: "#c5cdd6"
+                onClicked: {
+                    root.controller.setThumbLayer(checked);
+                    checked = Qt.binding(() => root.controller.thumbLayer);
+                }
+            }
+            AppText {
+                Layout.fillWidth: true
+                text: root.controller.recordingState === "Draft" ? qsTr("Switching layers discards this unsaved draft.") : (!root.controller.thumbLayer ? qsTr("Enable the thumb control to use Layer 2 during playback.") : qsTr("The thumb switches layers; it does not send a shortcut."))
+                color: "#aab6c3"
+            }
+        }
+
         AppText {
             Layout.fillWidth: true
-            text: !root.controller.connected ? qsTr("Start demo to reconnect.") : root.controller.editing ? qsTr("Layer 1: select a button and recording device, click Start recording, then press the shortcut when ready. Save or Cancel explicitly.") : (root.controller.mode === "Active" ? qsTr("Filled controls are held. The result and transitions come from the running demo.") : qsTr("Create or choose a profile, then explicitly Activate or Edit. New profiles have two blank layers."))
+            text: !root.controller.connected ? qsTr("Start demo to reconnect.") : root.controller.editing ? qsTr("Layer %1: select a button and recording device, click Start recording, then press the shortcut when ready. Save or Cancel explicitly.").arg(root.controller.editLayer) : (root.controller.mode === "Active" ? qsTr("Filled controls are held. The result and transitions come from the running demo.") : qsTr("Create or choose a profile, then explicitly Activate or Edit. New profiles have two blank layers."))
             color: "#aab6c3"
         }
 
