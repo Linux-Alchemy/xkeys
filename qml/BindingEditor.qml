@@ -38,7 +38,7 @@ Rectangle {
             textFormat: Text.PlainText
             objectName: "recordingTarget"
             Layout.fillWidth: true
-            text: root.targetName.length > 0 ? qsTr("%1 · Layer 1").arg(root.targetName) : qsTr("Select a button · Layer 1")
+            text: root.targetName.length > 0 ? qsTr("%1 · Layer %2").arg(root.targetName).arg(root.controller.editLayer) : qsTr("Select a button · Layer %1").arg(root.controller.editLayer)
             color: "#e5e9f0"
             font.pixelSize: 21
             font.bold: true

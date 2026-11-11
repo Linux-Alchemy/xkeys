@@ -191,6 +191,12 @@ bool Controller::editing() const
            m_snapshot.editProfileId == m_selected->id;
 }
 int Controller::activeLayer() const { return m_snapshot.activeLayer; }
+bool Controller::previewing() const
+{
+    return connected() && m_selected && !editing() &&
+           (m_snapshot.mode != Mode::Active || m_snapshot.activeId != m_selected->id ||
+            m_snapshot.activeRevision != m_selected->revision);
+}
 QStringList Controller::heldControls() const { return m_snapshot.heldControls; }
 
 QString Controller::heldOutputLabel() const
@@ -269,7 +275,8 @@ bool Controller::canSaveDraft() const
         return false;
     }
     auto profile = *m_selected;
-    profile.layers[0].insert(m_recordTarget->control, {m_draftActionLabel, m_draftCodes});
+    profile.layers.at(static_cast<std::size_t>(m_recordTarget->layer - 1))
+        .insert(m_recordTarget->control, {m_draftActionLabel, m_draftCodes});
     return static_cast<bool>(validateProfile(profile));
 }
 
@@ -285,21 +292,17 @@ QString Controller::conflictCheckNote() const
 
 QVariantMap Controller::controlLabels() const
 {
-    const bool matchesActive = m_selected && m_snapshot.mode == Mode::Active &&
-                               m_snapshot.activeId == m_selected->id &&
-                               m_snapshot.activeRevision == m_selected->revision;
-    if (!editing() && !matchesActive) {
+    if (!connected() || !m_selected) {
         return {};
     }
 
-    const int layer = editing() ? m_editLayer : m_snapshot.activeLayer;
+    const int layer = editing() || previewing() ? m_editLayer : m_snapshot.activeLayer;
     const auto &bindings = m_selected->layers.at(static_cast<std::size_t>(layer - 1));
     QVariantMap labels;
     for (auto entry = bindings.cbegin(); entry != bindings.cend(); ++entry) {
-        const auto text =
-            matchesActive && m_selected->thumbLayer && entry.key() == QStringLiteral("thumb")
-                ? QStringLiteral("Layer 2")
-                : savedChordLabel(entry.value().chord);
+        const auto text = m_selected->thumbLayer && entry.key() == QStringLiteral("thumb")
+                              ? QStringLiteral("Layer 2")
+                              : savedChordLabel(entry.value().chord);
         labels.insert(entry.key(), text);
     }
     return labels;
@@ -394,10 +397,6 @@ void Controller::beginEdit(const QString &controlId, int layer)
     if (!canChange() || !editing() || !knownControl(controlId)) {
         return;
     }
-    if (recordingAvailable() && layer != 1) {
-        discardDraft(RecordState::Error, QStringLiteral("Recording is available for Layer 1."));
-        return;
-    }
     if (layer != m_editLayer) {
         return;
     }
@@ -422,8 +421,8 @@ void Controller::beginEdit(const QString &controlId, int layer)
 
 void Controller::recordAgain()
 {
-    if (!canChange() || !editing() || m_editLayer != 1 || !knownControl(m_editControl) ||
-        !recordingAvailable() || (thumbLayer() && m_editControl == QStringLiteral("thumb"))) {
+    if (!canChange() || !editing() || !knownControl(m_editControl) || !recordingAvailable() ||
+        (thumbLayer() && m_editControl == QStringLiteral("thumb"))) {
         return;
     }
     if (!m_windowActive) {
@@ -449,7 +448,7 @@ void Controller::recordAgain()
 
     discardDraft(RecordState::Preparing,
                  QStringLiteral("Preparing keyboard. Wait before pressing keys."));
-    m_recordTarget = RecordTarget{m_selected->id, m_selected->revision, m_editControl};
+    m_recordTarget = RecordTarget{m_selected->id, m_selected->revision, m_editControl, m_editLayer};
     m_draftActionLabel = editBinding().label;
     m_layoutKeyboardId.clear();
     m_context->refresh(*keyboard);
@@ -461,7 +460,8 @@ void Controller::saveDraft()
         return;
     }
     auto profile = *m_selected;
-    profile.layers[0].insert(m_recordTarget->control, {m_draftActionLabel, m_draftCodes});
+    profile.layers.at(static_cast<std::size_t>(m_recordTarget->layer - 1))
+        .insert(m_recordTarget->control, {m_draftActionLabel, m_draftCodes});
     setRecordState(RecordState::Saving, QStringLiteral("Saving shortcut."));
     saveProfile(profile);
 }
@@ -491,7 +491,7 @@ bool Controller::validRecordTarget() const
     return connected() && !pending() && m_windowActive && editing() && m_recordTarget &&
            m_selected->id == m_recordTarget->profileId &&
            m_selected->revision == m_recordTarget->revision &&
-           m_editControl == m_recordTarget->control && m_editLayer == 1;
+           m_editControl == m_recordTarget->control && m_editLayer == m_recordTarget->layer;
 }
 
 const KeyboardSelection *Controller::selectedKeyboard() const
@@ -529,7 +529,8 @@ void Controller::finishCapture(const QList<int> &codes)
     }
 
     auto profile = *m_selected;
-    profile.layers[0].insert(m_recordTarget->control, {m_draftActionLabel, codes});
+    profile.layers.at(static_cast<std::size_t>(m_recordTarget->layer - 1))
+        .insert(m_recordTarget->control, {m_draftActionLabel, codes});
     const auto label = m_context->label(codes);
     if (codes.isEmpty() || label.isEmpty() || !validateProfile(profile)) {
         discardDraft(RecordState::Error,
@@ -687,11 +688,8 @@ void Controller::deactivate()
 
 void Controller::setEditLayer(int layer)
 {
-    if (layer == 2 && recordingAvailable() && canChange()) {
-        setError(QStringLiteral("Recording is available for Layer 1."));
-        return;
-    }
-    if (canChange() && editing() && (layer == 1 || layer == 2) && layer != m_editLayer) {
+    if (canChange() && (editing() || previewing()) && (layer == 1 || layer == 2) &&
+        layer != m_editLayer) {
         discardDraft(RecordState::Idle);
         m_editLayer = layer;
         emit profileChanged();
@@ -749,7 +747,7 @@ void Controller::saveProfile(const Profile &profile)
 
 void Controller::simulate(const QString &controlId, bool hold)
 {
-    if (canChange()) {
+    if (canChange() && !previewing()) {
         const auto action = hold ? QStringLiteral("toggle") : QStringLiteral("tap");
         send(Operation::Input,
              {{QStringLiteral("control"), controlId}, {QStringLiteral("action"), action}});

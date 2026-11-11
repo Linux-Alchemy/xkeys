@@ -42,6 +42,7 @@ class Controller : public QObject
     Q_PROPERTY(QString activeProfileName READ activeProfileName NOTIFY simulationChanged)
     Q_PROPERTY(QString mode READ mode NOTIFY simulationChanged)
     Q_PROPERTY(bool editing READ editing NOTIFY simulationChanged)
+    Q_PROPERTY(bool previewing READ previewing NOTIFY recordingChanged)
     Q_PROPERTY(int activeLayer READ activeLayer NOTIFY simulationChanged)
     Q_PROPERTY(QStringList heldControls READ heldControls NOTIFY simulationChanged)
     Q_PROPERTY(QString heldOutputLabel READ heldOutputLabel NOTIFY simulationChanged)
@@ -91,6 +92,7 @@ class Controller : public QObject
     QString activeProfileName() const;
     QString mode() const;
     bool editing() const;
+    bool previewing() const;
     int activeLayer() const;
     QStringList heldControls() const;
     QString heldOutputLabel() const;
@@ -158,6 +160,7 @@ class Controller : public QObject
         ProfileId profileId;
         Revision revision;
         ControlId control;
+        int layer;
     };
 
     void setState(State state);
