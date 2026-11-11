@@ -103,6 +103,10 @@ build/dev/bin/xkeys --demo --recording
 ctest --test-dir build/dev -L recording --output-on-failure --no-tests=error
 ```
 
+Selecting a saved profile previews its bindings immediately. The layer buttons
+browse that preview without editing, recording or activating the selected profile.
+An already-active profile keeps running while a different profile is previewed.
+
 In a Hyprland Wayland session, select a saved profile, choose **Edit**, select an
 accessible USB keyboard, choose **Layer 1** or **Layer 2**, and click a control. Selection only displays its
 binding; it does not acquire the keyboard or start a countdown. Click **Start

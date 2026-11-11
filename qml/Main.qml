@@ -147,7 +147,7 @@ ApplicationWindow {
 
         RowLayout {
             Layout.fillWidth: true
-            visible: root.controller.connected && root.controller.mode === "Active"
+            visible: root.controller.connected && root.controller.mode === "Active" && !root.controller.previewing
             spacing: 10
             CheckBox {
                 id: holdMode
@@ -174,10 +174,10 @@ ApplicationWindow {
 
         RowLayout {
             Layout.fillWidth: true
-            visible: root.controller.editing
+            visible: root.controller.editing || root.controller.previewing
             spacing: 10
             AppText {
-                text: qsTr("Edit layer")
+                text: root.controller.previewing ? qsTr("Preview layer") : qsTr("Edit layer")
             }
             ActionButton {
                 objectName: "editLayerOneButton"
@@ -195,6 +195,7 @@ ApplicationWindow {
             }
             CheckBox {
                 objectName: "thumbLayerCheckbox"
+                visible: root.controller.editing
                 text: qsTr("Hold thumb for Layer 2")
                 checked: root.controller.thumbLayer
                 enabled: !root.controller.pending && !root.bindingTransaction
@@ -206,6 +207,7 @@ ApplicationWindow {
             }
             AppText {
                 Layout.fillWidth: true
+                visible: root.controller.editing
                 text: root.controller.recordingState === "Draft" ? qsTr("Switching layers discards this unsaved draft.") : (!root.controller.thumbLayer ? qsTr("Enable the thumb control to use Layer 2 during playback.") : qsTr("The thumb switches layers; it does not send a shortcut."))
                 color: "#aab6c3"
             }
@@ -213,7 +215,8 @@ ApplicationWindow {
 
         AppText {
             Layout.fillWidth: true
-            text: !root.controller.connected ? qsTr("Start demo to reconnect.") : root.controller.editing ? qsTr("Layer %1: select a button and recording device, click Start recording, then press the shortcut when ready. Save or Cancel explicitly.").arg(root.controller.editLayer) : (root.controller.mode === "Active" ? qsTr("Filled controls are held. The result and transitions come from the running demo.") : qsTr("Create or choose a profile, then explicitly Activate or Edit. New profiles have two blank layers."))
+            objectName: "profileGuidance"
+            text: !root.controller.connected ? qsTr("Start demo to reconnect.") : root.controller.previewing ? qsTr("Previewing %1 · Layer %2 · read only. Choose Edit to change bindings or Activate to use this profile.").arg(root.controller.selectedProfileName).arg(root.controller.editLayer) : root.controller.editing ? qsTr("Layer %1: select a button and recording device, click Start recording, then press the shortcut when ready. Save or Cancel explicitly.").arg(root.controller.editLayer) : (root.controller.mode === "Active" ? qsTr("Filled controls are held. The result and transitions come from the running demo.") : qsTr("Create or choose a profile, then explicitly Activate or Edit. New profiles have two blank layers."))
             color: "#aab6c3"
         }
 
@@ -228,10 +231,10 @@ ApplicationWindow {
                 Layout.maximumHeight: 420
                 Layout.alignment: Qt.AlignVCenter
                 controls: root.controller.controls
-                selectedControl: root.controller.connected ? root.controller.selectedControl : ""
-                heldControls: root.controller.heldControls
+                selectedControl: root.controller.connected && !root.controller.previewing ? root.controller.selectedControl : ""
+                heldControls: root.controller.previewing ? [] : root.controller.heldControls
                 controlLabels: root.controller.controlLabels
-                ready: root.controller.connected && !root.controller.pending && !root.bindingTransaction && (root.controller.editing || root.controller.mode === "Active")
+                ready: root.controller.connected && !root.controller.pending && !root.bindingTransaction && (root.controller.editing || (root.controller.mode === "Active" && !root.controller.previewing))
                 onControlPressed: controlId => {
                     if (root.controller.editing)
                         root.controller.selectControl(controlId);
@@ -252,8 +255,15 @@ ApplicationWindow {
                     controller: root.controller
                     targetName: root.controlName(root.controller.selectedControl)
                 }
+                AppText {
+                    objectName: "profilePreviewSummary"
+                    visible: root.controller.previewing
+                    Layout.fillWidth: true
+                    text: root.controller.thumbLayer ? qsTr("Saved bindings · Layer %1\nThumb control: hold for Layer 2.").arg(root.controller.editLayer) : qsTr("Saved bindings · Layer %1\nThumb layer switching is off.").arg(root.controller.editLayer)
+                    color: "#8dd4e8"
+                }
                 TestPopup {
-                    visible: !root.controller.editing
+                    visible: !root.controller.editing && !root.controller.previewing
                     Layout.fillWidth: true
                     controlId: root.controller.selectedControl
                     controlName: root.controlName(root.controller.selectedControl)
@@ -265,18 +275,18 @@ ApplicationWindow {
                 }
                 AppText {
                     Layout.fillWidth: true
-                    visible: !root.controller.editing
+                    visible: !root.controller.editing && !root.controller.previewing
                     text: qsTr("Held output: %1").arg(root.controller.connected ? root.controller.heldOutputLabel : qsTr("None"))
                     color: "#8dd4e8"
                 }
                 AppText {
-                    visible: !root.controller.editing
+                    visible: !root.controller.editing && !root.controller.previewing
                     text: qsTr("SIMULATED TRANSITIONS")
                     font.pixelSize: 11
                     font.letterSpacing: 1
                 }
                 ScrollView {
-                    visible: !root.controller.editing
+                    visible: !root.controller.editing && !root.controller.previewing
                     Layout.fillWidth: true
                     Layout.preferredHeight: 95
                     clip: true

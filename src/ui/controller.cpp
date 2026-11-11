@@ -191,6 +191,12 @@ bool Controller::editing() const
            m_snapshot.editProfileId == m_selected->id;
 }
 int Controller::activeLayer() const { return m_snapshot.activeLayer; }
+bool Controller::previewing() const
+{
+    return connected() && m_selected && !editing() &&
+           (m_snapshot.mode != Mode::Active || m_snapshot.activeId != m_selected->id ||
+            m_snapshot.activeRevision != m_selected->revision);
+}
 QStringList Controller::heldControls() const { return m_snapshot.heldControls; }
 
 QString Controller::heldOutputLabel() const
@@ -286,14 +292,11 @@ QString Controller::conflictCheckNote() const
 
 QVariantMap Controller::controlLabels() const
 {
-    const bool matchesActive = m_selected && m_snapshot.mode == Mode::Active &&
-                               m_snapshot.activeId == m_selected->id &&
-                               m_snapshot.activeRevision == m_selected->revision;
-    if (!editing() && !matchesActive) {
+    if (!connected() || !m_selected) {
         return {};
     }
 
-    const int layer = editing() ? m_editLayer : m_snapshot.activeLayer;
+    const int layer = editing() || previewing() ? m_editLayer : m_snapshot.activeLayer;
     const auto &bindings = m_selected->layers.at(static_cast<std::size_t>(layer - 1));
     QVariantMap labels;
     for (auto entry = bindings.cbegin(); entry != bindings.cend(); ++entry) {
@@ -685,7 +688,8 @@ void Controller::deactivate()
 
 void Controller::setEditLayer(int layer)
 {
-    if (canChange() && editing() && (layer == 1 || layer == 2) && layer != m_editLayer) {
+    if (canChange() && (editing() || previewing()) && (layer == 1 || layer == 2) &&
+        layer != m_editLayer) {
         discardDraft(RecordState::Idle);
         m_editLayer = layer;
         emit profileChanged();
@@ -743,7 +747,7 @@ void Controller::saveProfile(const Profile &profile)
 
 void Controller::simulate(const QString &controlId, bool hold)
 {
-    if (canChange()) {
+    if (canChange() && !previewing()) {
         const auto action = hold ? QStringLiteral("toggle") : QStringLiteral("tap");
         send(Operation::Input,
              {{QStringLiteral("control"), controlId}, {QStringLiteral("action"), action}});

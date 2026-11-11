@@ -148,6 +148,8 @@ class RecordingUiTest : public QObject
     void cleanup();
     void dpadTargetsStayUsableAtBothWindowSizes();
     void selectionWaitsForExplicitRecording();
+    void previewsSavedLayersWithoutEditingOrCapture();
+    void previewDoesNotChangeActiveProfile();
     void previewsAndSavesOnlyAfterRelease();
     void cancelsWithoutChangingSavedBinding_data();
     void cancelsWithoutChangingSavedBinding();
@@ -409,6 +411,138 @@ void RecordingUiTest::dpadTargetsStayUsableAtBothWindowSizes()
             QVERIFY2(viewport.contains(target), qPrintable(description));
         }
     }
+}
+
+void RecordingUiTest::previewsSavedLayersWithoutEditingOrCapture()
+{
+    // init selected a persisted profile without entering Edit or choosing a keyboard.
+    const auto id = controller_->selectedProfileId();
+    const auto saved = ProfileStore(profilePath_).load(id);
+    QVERIFY(saved);
+    QVERIFY(controller_->previewing());
+    QVERIFY(!controller_->editing());
+    QCOMPARE(controller_->mode(), QStringLiteral("Inactive"));
+    QCOMPARE(controller_->recordingState(), QStringLiteral("Idle"));
+    QCOMPARE(tileShortcut(key01), chordLabel(existingChord));
+    QCOMPARE(tileShortcut(key03), QStringLiteral("Blank"));
+    QVERIFY(itemText(QStringLiteral("profileGuidance")).contains(QStringLiteral("read only")));
+    verifyDisabled(QStringLiteral("pad-key01"));
+    QVERIFY(!findItem(QStringLiteral("bindingEditor"))->isVisible());
+    QVERIFY(!findItem(QStringLiteral("thumbLayerCheckbox"))->isVisible());
+    QVERIFY(!findItem(QStringLiteral("testPopup"))->isVisible());
+    saveImage(QStringLiteral("profile-preview-layer-one.png"));
+
+    click(QStringLiteral("editLayerTwoButton"));
+    QCOMPARE(controller_->editLayer(), 2);
+    QCOMPARE(tileShortcut(key03), chordLabel(layerTwoChord));
+    QVERIFY(itemText(QStringLiteral("profileGuidance")).contains(QStringLiteral("Layer 2")));
+    window_->resize(window_->minimumSize());
+    saveImage(QStringLiteral("profile-preview-layer-two-small.png"));
+    controller_->beginEdit(key03, 2);
+    controller_->recordAgain();
+    controller_->clearBinding();
+    controller_->setThumbLayer(true);
+    controller_->selectControl(key03);
+    controller_->simulate(key03, true);
+    QVERIFY(!controller_->pending());
+    QVERIFY(!controller_->editing());
+    QVERIFY(controller_->activeProfileId().isEmpty());
+    QVERIFY(controller_->heldControls().isEmpty());
+    QCOMPARE(controller_->heldOutputLabel(), QStringLiteral("None"));
+    QCOMPARE(capture_->starts, 0);
+    QCOMPARE(context_->refreshes, 0);
+    QCOMPARE(controller_->recordingRemainingSeconds(), 0);
+    const auto unchanged = ProfileStore(profilePath_).load(id);
+    QVERIFY(unchanged);
+    QCOMPARE(unchanged.value(), saved.value());
+
+    click(QStringLiteral("editLayerOneButton"));
+    QCOMPARE(tileShortcut(key01), chordLabel(existingChord));
+    click(QStringLiteral("editProfileButton"));
+    QTRY_VERIFY(!controller_->pending() && controller_->editing());
+    QVERIFY(!controller_->previewing());
+    QVERIFY(findItem(QStringLiteral("bindingEditor"))->isVisible());
+    QCOMPARE(capture_->starts, 0);
+    QVERIFY(controller_->activeProfileId().isEmpty());
+
+    // A disconnected editor must not continue to present cached labels as current.
+    controller_->stopDemo();
+    QTRY_VERIFY(!controller_->connected());
+    QVERIFY(!controller_->previewing());
+    QVERIFY(controller_->controlLabels().isEmpty());
+}
+
+void RecordingUiTest::previewDoesNotChangeActiveProfile()
+{
+    const auto firstId = controller_->selectedProfileId();
+    controller_->createProfile(QStringLiteral("Other profile"));
+    QTRY_VERIFY(!controller_->pending());
+    const auto secondId = controller_->selectedProfileId();
+    ProfileStore store(profilePath_);
+    const auto second = store.load(secondId);
+    QVERIFY(second);
+    auto profile = second.value();
+    profile.layers[0].insert(key01, {{}, layerTwoChord});
+    QVERIFY(store.save(profile, profile.revision));
+    controller_->selectProfile(firstId);
+    QTRY_VERIFY(!controller_->pending());
+    click(QStringLiteral("activateButton"));
+    QTRY_VERIFY(!controller_->pending() && controller_->mode() == QStringLiteral("Active"));
+    QVERIFY(!controller_->previewing());
+    controller_->simulate(key01, true);
+    QTRY_VERIFY(!controller_->pending());
+    const auto held = controller_->heldControls();
+    QCOMPARE(controller_->heldOutputLabel(), chordLabel(existingChord));
+
+    controller_->selectProfile(secondId);
+    QTRY_VERIFY(!controller_->pending());
+    QVERIFY(controller_->previewing());
+    QCOMPARE(controller_->activeProfileId(), firstId);
+    QCOMPARE(controller_->mode(), QStringLiteral("Active"));
+    QCOMPARE(tileShortcut(key01), chordLabel(layerTwoChord));
+    QCOMPARE(controller_->heldControls(), held);
+    QVERIFY(itemText(QStringLiteral("activeProfileBanner"))
+                .contains(QStringLiteral("Recording fixture")));
+    QVERIFY(itemText(QStringLiteral("profileGuidance")).contains(QStringLiteral("Other profile")));
+    QVERIFY(findItem(QStringLiteral("keypad"))->property("heldControls").toStringList().isEmpty());
+    verifyDisabled(QStringLiteral("pad-key01"));
+    QVERIFY(!findItem(QStringLiteral("holdMode"))->isVisible());
+    QVERIFY(!findItem(QStringLiteral("testPopup"))->isVisible());
+    saveImage(QStringLiteral("profile-preview-with-another-active.png"));
+    click(QStringLiteral("editLayerTwoButton"));
+    QCOMPARE(tileShortcut(key01), QStringLiteral("Blank"));
+    controller_->simulate(key03, true);
+    controller_->recordAgain();
+    QVERIFY(!controller_->pending());
+    QCOMPARE(controller_->heldControls(), held);
+    QCOMPARE(controller_->heldOutputLabel(), chordLabel(existingChord));
+    QCOMPARE(controller_->activeProfileId(), firstId);
+    QCOMPARE(capture_->starts, 0);
+    QCOMPARE(context_->refreshes, 0);
+
+    controller_->selectProfile(firstId);
+    QTRY_VERIFY(!controller_->pending());
+    QVERIFY(!controller_->previewing());
+    QCOMPARE(tileShortcut(key01), chordLabel(existingChord));
+    QCOMPARE(controller_->heldControls(), held);
+
+    // A newer saved revision is a preview, even when its ID matches the active profile.
+    const auto first = store.load(firstId);
+    QVERIFY(first);
+    profile = first.value();
+    profile.layers[0].insert(key01, {{}, ordinaryChord});
+    QVERIFY(store.save(profile, profile.revision));
+    controller_->selectProfile(firstId);
+    QTRY_VERIFY(!controller_->pending());
+    QVERIFY(controller_->previewing());
+    QCOMPARE(tileShortcut(key01), chordLabel(ordinaryChord));
+    QCOMPARE(controller_->heldOutputLabel(), chordLabel(existingChord));
+    controller_->simulate(key01, true);
+    QVERIFY(!controller_->pending());
+    QCOMPARE(controller_->heldControls(), held);
+    controller_->releaseAll();
+    QTRY_VERIFY(!controller_->pending());
+    QCOMPARE(controller_->heldOutputLabel(), QStringLiteral("None"));
 }
 
 void RecordingUiTest::selectionWaitsForExplicitRecording()

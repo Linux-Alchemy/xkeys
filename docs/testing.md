@@ -16,8 +16,14 @@ already open, close its window before relaunching with `--recording`; launch-or-
 focuses an existing window and does not change its startup options. The profile
 service can remain running.
 
-Choose a profile and **Edit**. Choose the intended recording keyboard. A uniquely
-identified Q1 Max wired/Keychron Link receiver pair appears as one logical keyboard;
+Choosing a profile immediately shows its saved bindings as a read-only preview.
+Use **Layer 1** and **Layer 2** to inspect both sets without entering Edit, starting
+recording or activating output. The keypad cannot simulate presses in preview.
+If another profile is already active, it keeps running and remains named in the
+active-profile banner; the preview identifies the selected profile separately.
+
+Choose **Edit** to change bindings, then choose the intended recording keyboard.
+A uniquely identified Q1 Max wired/Keychron Link receiver pair appears as one logical keyboard;
 all of its currently verified keyboard-bearing routes are acquired together. A
 changed connection or fingerprint requires fresh selection. Do not change transport
 mid-chord. Other devices remain outside the selected capture boundary.
@@ -50,9 +56,13 @@ Ready/Recording. A failure before Ready must report an error rather than invite 
    Layer 1 before saving: the draft must be discarded, with both saved bindings
    intact. Layer switching is disabled while recording, stopping or saving.
 4. Return to Layer 2 and **Clear binding**. Layer 2 must show Blank while Layer 1
-   retains Ctrl+Alt+F. Record/save Ctrl+Alt+E on Layer 2 again. Close/reopen the
-   editor, select the same profile and Edit; both saved assignments must remain.
-5. Enable **Hold thumb for Layer 2**. The thumb tile reads Layer 2 and cannot record
+   retains Ctrl+Alt+F. Record/save Ctrl+Alt+E on Layer 2 again. Close the editor
+   using the window manager's close shortcut (Super+W on the review desktop), then
+   reopen it with the command above. Select the same profile: its saved bindings
+   must appear immediately, with both layers available for read-only preview.
+   Editing, recording and activation must remain off until explicitly requested.
+   The window has no built-in close button.
+5. Choose **Edit**, then enable **Hold thumb for Layer 2**. The thumb tile reads Layer 2 and cannot record
    its own shortcut while this setting is enabled. It remains possible to inspect
    and clear its stored shortcut. Editing Layer 2 is possible with this setting
    off, but using Layer 2 during playback requires enabling it.
